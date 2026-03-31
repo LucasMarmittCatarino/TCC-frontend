@@ -83,7 +83,9 @@ export default function Sidebar() {
     const width = collapsed ? "72px" : "240px";
 
     const handleLogout = () => {
-        // TODO: clear session/token and redirect
+        document.cookie = "auth_token=; path=/; max-age=0";
+        localStorage.removeItem("auth_token");
+        localStorage.removeItem("auth_user");
         router.push("/login");
     };
 
@@ -107,14 +109,15 @@ export default function Sidebar() {
                     height: "64px",
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: collapsed ? "0 12px" : "0 12px 0 20px",
+                    justifyContent: collapsed ? "center" : "space-between",
+                    padding: collapsed ? "0" : "0 12px 0 20px",
                     borderBottom: "1px solid var(--card-border)",
                     flexShrink: 0,
                     gap: "8px",
                 }}
             >
                 {/* Brand */}
+                {!collapsed && (
                 <div style={{ display: "flex", alignItems: "center", gap: "12px", overflow: "hidden", flex: 1 }}>
                     <div
                         style={{
@@ -144,10 +147,11 @@ export default function Sidebar() {
                                 overflow: "hidden",
                             }}
                         >
-                            StudyPath
+                            Editaly
                         </span>
                     )}
                 </div>
+                )}
 
                 {/* ── Toggle button ──────────────────────────────── */}
                 <button
@@ -203,8 +207,9 @@ export default function Sidebar() {
                             style={{
                                 display: "flex",
                                 alignItems: "center",
+                                justifyContent: collapsed ? "center" : "flex-start",
                                 gap: "12px",
-                                padding: collapsed ? "10px 16px" : "10px 14px",
+                                padding: collapsed ? "10px 0" : "10px 14px",
                                 borderRadius: "10px",
                                 textDecoration: "none",
                                 color: isActive ? "white" : "var(--muted)",
@@ -255,58 +260,99 @@ export default function Sidebar() {
                     style={{
                         display: "flex",
                         alignItems: "center",
-                        gap: "12px",
-                        padding: collapsed ? "10px 16px" : "10px 14px",
+                        justifyContent: collapsed ? "center" : "space-between",
+                        gap: collapsed ? "0" : "12px",
+                        padding: collapsed ? "10px 0" : "10px 14px",
                         borderRadius: "10px",
                         overflow: "hidden",
                         cursor: "default",
                     }}
                 >
-                    {/* Avatar */}
-                    <div
-                        style={{
-                            width: "32px",
-                            height: "32px",
-                            borderRadius: "50%",
-                            background: "linear-gradient(135deg, var(--primary), #818cf8)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                            color: "white",
-                        }}
-                    >
-                        <IconUser size={16} />
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: collapsed ? "center" : "flex-start", gap: "12px", overflow: "hidden", flex: collapsed ? "none" : 1 }}>
+                        {/* Avatar */}
+                        <div
+                            style={{
+                                width: "32px",
+                                height: "32px",
+                                borderRadius: "50%",
+                                background: "linear-gradient(135deg, var(--primary), #818cf8)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                flexShrink: 0,
+                                color: "white",
+                            }}
+                        >
+                            <IconUser size={16} />
+                        </div>
+
+                        {!collapsed && (
+                            <div style={{ overflow: "hidden", flex: 1 }}>
+                                <p
+                                    style={{
+                                        fontSize: "13px",
+                                        fontWeight: 600,
+                                        color: "var(--foreground)",
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        lineHeight: 1.3,
+                                    }}
+                                >
+                                    {MOCK_USER.name}
+                                </p>
+                                <p
+                                    style={{
+                                        fontSize: "11px",
+                                        color: "var(--muted)",
+                                        whiteSpace: "nowrap",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        lineHeight: 1.3,
+                                    }}
+                                >
+                                    {MOCK_USER.email}
+                                </p>
+                            </div>
+                        )}
                     </div>
 
                     {!collapsed && (
-                        <div style={{ overflow: "hidden", flex: 1 }}>
-                            <p
-                                style={{
-                                    fontSize: "13px",
-                                    fontWeight: 600,
-                                    color: "var(--foreground)",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    lineHeight: 1.3,
-                                }}
-                            >
-                                {MOCK_USER.name}
-                            </p>
-                            <p
-                                style={{
-                                    fontSize: "11px",
-                                    color: "var(--muted)",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    lineHeight: 1.3,
-                                }}
-                            >
-                                {MOCK_USER.email}
-                            </p>
-                        </div>
+                        <button
+                            id="user-settings-btn"
+                            onClick={() => router.push("/perfil")}
+                            title="Configurações de Usuário"
+                            style={{
+                                width: "28px",
+                                height: "28px",
+                                borderRadius: "8px",
+                                background: "transparent",
+                                border: "1px solid var(--card-border)",
+                                color: "var(--muted)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                cursor: "pointer",
+                                flexShrink: 0,
+                                transition: "background 0.2s, color 0.2s, border-color 0.2s",
+                            }}
+                            onMouseEnter={(e) => {
+                                const el = e.currentTarget as HTMLButtonElement;
+                                el.style.background = "var(--primary)";
+                                el.style.color = "white";
+                                el.style.borderColor = "var(--primary)";
+                            }}
+                            onMouseLeave={(e) => {
+                                const el = e.currentTarget as HTMLButtonElement;
+                                el.style.background = "transparent";
+                                el.style.color = "var(--muted)";
+                                el.style.borderColor = "var(--card-border)";
+                            }}
+                        >
+                            <span style={{ transform: "rotate(180deg)", display: "flex" }}>
+                                <IconChevronLeft size={14} />
+                            </span>
+                        </button>
                     )}
                 </div>
 
@@ -318,8 +364,9 @@ export default function Sidebar() {
                     style={{
                         display: "flex",
                         alignItems: "center",
+                        justifyContent: collapsed ? "center" : "flex-start",
                         gap: "12px",
-                        padding: collapsed ? "10px 16px" : "10px 14px",
+                        padding: collapsed ? "10px 0" : "10px 14px",
                         borderRadius: "10px",
                         border: "none",
                         background: "transparent",

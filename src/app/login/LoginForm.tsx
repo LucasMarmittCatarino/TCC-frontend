@@ -36,6 +36,8 @@ export default function LoginForm() {
             const data = await response.json();
 
             if (response.ok) {
+                // Configurando o Cookie via document do browser
+                document.cookie = `auth_token=${data.token}; path=/; max-age=604800; samesite=strict`;
                 localStorage.setItem("auth_token", data.token);
                 localStorage.setItem("auth_user", JSON.stringify(data.user));
                 router.push("/home");
