@@ -30,6 +30,19 @@ export default function RegisterForm() {
     const [errors, setErrors] = useState<FormErrors>({});
     const [isLoading, setIsLoading] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+    // Avaliação de força e critérios da senha atual
+    const passwordCriteria = [
+        { id: "length", label: "Mínimo de 8 caracteres", met: formData.password.length >= 8 },
+        { id: "uppercase", label: "Pelo menos uma letra maiúscula", met: /[A-Z]/.test(formData.password) },
+        { id: "lowercase", label: "Pelo menos uma letra minúscula", met: /[a-z]/.test(formData.password) },
+        { id: "number", label: "Pelo menos um número", met: /[0-9]/.test(formData.password) },
+        { id: "special", label: "Pelo menos um caractere especial (!@#$%, etc)", met: /[^A-Za-z0-9]/.test(formData.password) },
+    ];
+
+    const passwordIsValid = passwordCriteria.every((c) => c.met);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { id, value } = e.target;
@@ -40,8 +53,16 @@ export default function RegisterForm() {
             "confirm-password": "confirmPassword",
         };
         const field = fieldMap[id];
+        
         if (field) {
-            setFormData((prev) => ({ ...prev, [field]: value }));
+            let nextValue = value;
+            
+            // Restringir nome apenas a letras e espaços
+            if (field === "name") {
+                nextValue = nextValue.replace(/[^a-zA-ZÀ-ÿ\s]/g, "");
+            }
+            
+            setFormData((prev) => ({ ...prev, [field]: nextValue }));
             // Clear field error on typing
             setErrors((prev) => ({ ...prev, [field]: undefined }));
         }
@@ -62,8 +83,8 @@ export default function RegisterForm() {
 
         if (!formData.password) {
             newErrors.password = "Senha é obrigatória";
-        } else if (formData.password.length < 6) {
-            newErrors.password = "Senha deve ter pelo menos 6 caracteres";
+        } else if (!passwordIsValid) {
+            newErrors.password = "A senha não atende aos requisitos de segurança";
         }
 
         if (!formData.confirmPassword) {
@@ -128,7 +149,7 @@ export default function RegisterForm() {
 
     return (
         <div
-            className="w-full max-w-md rounded-2xl p-8 shadow-2xl border"
+            className="w-full max-w-md rounded-2xl p-8 shadow-2xl border my-8"
             style={{
                 background: "var(--card-bg)",
                 borderColor: "var(--card-border)",
@@ -227,7 +248,7 @@ export default function RegisterForm() {
                 </div>
 
                 {/* E-mail */}
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1.5 relative">
                     <label
                         htmlFor="email"
                         className="text-sm font-medium"
@@ -253,7 +274,7 @@ export default function RegisterForm() {
                 </div>
 
                 {/* Senha */}
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1.5 relative">
                     <label
                         htmlFor="password"
                         className="text-sm font-medium"
@@ -261,21 +282,67 @@ export default function RegisterForm() {
                     >
                         Senha
                     </label>
-                    <input
-                        id="password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={formData.password}
-                        onChange={handleChange}
-                        className={inputClass}
-                        style={inputStyle(!!errors.password)}
-                        onFocus={(e) => (e.target.style.borderColor = errors.password ? "#ef4444" : "var(--primary)")}
-                        onBlur={(e) => (e.target.style.borderColor = errors.password ? "#ef4444" : "var(--input-border)")}
-                        disabled={isLoading}
-                    />
+                    <div className="relative w-full">
+                        <input
+                            id="password"
+                            type={showPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            value={formData.password}
+                            onChange={handleChange}
+                            className={inputClass}
+                            style={{
+                                ...inputStyle(!!errors.password),
+                                paddingRight: "2.5rem"
+                            }}
+                            onFocus={(e) => (e.target.style.borderColor = errors.password ? "#ef4444" : "var(--primary)")}
+                            onBlur={(e) => (e.target.style.borderColor = errors.password ? "#ef4444" : "var(--input-border)")}
+                            disabled={isLoading}
+                        />
+
+
+
+                        {/* Botão de mostrar/esconder senha */}
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                            tabIndex={-1}
+                        >
+                            {showPassword ? (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
+                    
                     {errors.password && (
                         <p className="text-xs" style={{ color: "#ef4444" }}>{errors.password}</p>
                     )}
+
+                    {/* Checklists de força de senha */}
+                    <div className="mt-2 flex flex-col gap-1.5 p-3 rounded-lg border border-dashed border-card-border bg-background">
+                        {passwordCriteria.map((item) => (
+                            <div 
+                                key={item.id} 
+                                className={`flex items-center gap-2 text-xs transition-colors duration-300 ${item.met ? "text-green-500 font-medium" : "text-muted"}`}
+                            >
+                                {item.met ? (
+                                    <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                ) : (
+                                    <div className="w-3.5 h-3.5 shrink-0 rounded-full border border-current opacity-50" />
+                                )}
+                                <span>{item.label}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Confirmar senha */}
@@ -287,18 +354,42 @@ export default function RegisterForm() {
                     >
                         Confirmar senha
                     </label>
-                    <input
-                        id="confirm-password"
-                        type="password"
-                        placeholder="••••••••"
-                        value={formData.confirmPassword}
-                        onChange={handleChange}
-                        className={inputClass}
-                        style={inputStyle(!!errors.confirmPassword)}
-                        onFocus={(e) => (e.target.style.borderColor = errors.confirmPassword ? "#ef4444" : "var(--primary)")}
-                        onBlur={(e) => (e.target.style.borderColor = errors.confirmPassword ? "#ef4444" : "var(--input-border)")}
-                        disabled={isLoading}
-                    />
+                    <div className="relative w-full">
+                        <input
+                            id="confirm-password"
+                            type={showConfirmPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            value={formData.confirmPassword}
+                            onChange={handleChange}
+                            className={inputClass}
+                            style={{
+                                ...inputStyle(!!errors.confirmPassword),
+                                paddingRight: "2.5rem"
+                            }}
+                            onFocus={(e) => (e.target.style.borderColor = errors.confirmPassword ? "#ef4444" : "var(--primary)")}
+                            onBlur={(e) => (e.target.style.borderColor = errors.confirmPassword ? "#ef4444" : "var(--input-border)")}
+                            disabled={isLoading}
+                        />
+
+                        {/* Botão de mostrar/esconder senha */}
+                        <button
+                            type="button"
+                            onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition-colors cursor-pointer focus:outline-none"
+                            tabIndex={-1}
+                        >
+                            {showConfirmPassword ? (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                                </svg>
+                            )}
+                        </button>
+                    </div>
                     {errors.confirmPassword && (
                         <p className="text-xs" style={{ color: "#ef4444" }}>{errors.confirmPassword}</p>
                     )}
@@ -308,7 +399,7 @@ export default function RegisterForm() {
                 <button
                     type="submit"
                     id="register-submit"
-                    disabled={isLoading || success}
+                    disabled={isLoading || success || (formData.password.length > 0 && !passwordIsValid)}
                     className="w-full rounded-lg py-3 text-sm font-semibold text-white transition-all duration-200 cursor-pointer mt-1 hover:opacity-90 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     style={{ background: "var(--primary)" }}
                 >
