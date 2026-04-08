@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export type ToastType = "success" | "error" | "info";
+export type ToastType = "success" | "error" | "info" | "warning";
 
 export interface ToastItem {
     id: string;
@@ -32,6 +32,12 @@ const COLORS: Record<ToastType, { bg: string; border: string; text: string; bar:
         text: "#a5b4fc",
         bar: "#6366f1",
     },
+    warning: {
+        bg: "rgba(245, 158, 11, 0.12)",
+        border: "rgba(245, 158, 11, 0.35)",
+        text: "#fbbf24",
+        bar: "#f59e0b",
+    },
 };
 
 function ToastIcon({ type }: { type: ToastType }) {
@@ -43,6 +49,14 @@ function ToastIcon({ type }: { type: ToastType }) {
         );
     }
     if (type === "error") {
+        return (
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
+                    d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+        );
+    }
+    if (type === "warning") {
         return (
             <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
