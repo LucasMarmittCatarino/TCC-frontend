@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import LoginForm from "./LoginForm";
 
 export const metadata: Metadata = {
-    title: "Login | TCC",
+    title: "Login — Editaly",
     description: "Faça login na sua conta",
 };
 

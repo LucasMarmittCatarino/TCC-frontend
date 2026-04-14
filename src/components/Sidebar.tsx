@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -58,22 +58,18 @@ const navItems = [
         label: "Dashboard",
         href: "/home",
         icon: IconDashboard,
+        dynamicHref: false,
     },
     {
         id: "trilha",
         label: "Trilha de Estudos",
-        href: "/home/trilha",
+        href: "/home",           // fallback; overridden below
         icon: IconTrail,
+        dynamicHref: true,       // uses lastEdictId
     },
 ];
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
-
-// TODO: replace with real user data from auth context / session
-const MOCK_USER = {
-    name: "Lucas Marmitt",
-    email: "lucas@example.com",
-};
 
 export default function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
@@ -81,6 +77,30 @@ export default function Sidebar() {
     const router = useRouter();
 
     const width = collapsed ? "72px" : "240px";
+
+    // ── Real user from localStorage ──────────────────────────────────────────
+    const [user, setUser] = useState({ name: "", email: "" });
+    const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+    const [lastEdictId, setLastEdictId] = useState<string | null>(null);
+
+    useEffect(() => {
+        const stored = localStorage.getItem("auth_user");
+        if (stored) {
+            try {
+                const obj = JSON.parse(stored);
+                setUser({ name: obj.name ?? "", email: obj.email ?? "" });
+            } catch { /* ignore */ }
+        }
+        setAvatarUrl(localStorage.getItem("avatar_url"));
+        setLastEdictId(localStorage.getItem("last_edict_id"));
+
+        // Listen for avatar changes dispatched by the profile page
+        const onAvatarUpdate = () => {
+            setAvatarUrl(localStorage.getItem("avatar_url"));
+        };
+        window.addEventListener("avatar_updated", onAvatarUpdate);
+        return () => window.removeEventListener("avatar_updated", onAvatarUpdate);
+    }, []);
 
     const handleLogout = () => {
         document.cookie = "auth_token=; path=/; max-age=0";
@@ -195,13 +215,18 @@ export default function Sidebar() {
             {/* ── Nav items ─────────────────────────────────── */}
             <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: "2px" }}>
                 {navItems.map((item) => {
-                    const isActive = pathname === item.href;
+                    const href = item.dynamicHref
+                        ? (lastEdictId ? `/home/edital/${lastEdictId}` : "/home")
+                        : item.href;
+                    const isActive = item.dynamicHref
+                        ? pathname.startsWith("/home/edital")
+                        : pathname === item.href;
                     const Icon = item.icon;
 
                     return (
                         <Link
                             key={item.id}
-                            href={item.href}
+                            href={href}
                             id={`nav-${item.id}`}
                             title={collapsed ? item.label : undefined}
                             style={{
@@ -256,7 +281,7 @@ export default function Sidebar() {
                 {/* User info */}
                 <div
                     id="sidebar-user"
-                    title={collapsed ? `${MOCK_USER.name}\n${MOCK_USER.email}` : undefined}
+                    title={collapsed ? `${user.name}\n${user.email}` : undefined}
                     style={{
                         display: "flex",
                         alignItems: "center",
@@ -275,15 +300,24 @@ export default function Sidebar() {
                                 width: "32px",
                                 height: "32px",
                                 borderRadius: "50%",
-                                background: "linear-gradient(135deg, var(--primary), #818cf8)",
+                                background: avatarUrl ? "transparent" : "linear-gradient(135deg, var(--primary), #818cf8)",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
                                 flexShrink: 0,
                                 color: "white",
+                                overflow: "hidden",
                             }}
                         >
-                            <IconUser size={16} />
+                            {avatarUrl ? (
+                                <img
+                                    src={avatarUrl}
+                                    alt="Avatar"
+                                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                                />
+                            ) : (
+                                <IconUser size={16} />
+                            )}
                         </div>
 
                         {!collapsed && (
@@ -299,7 +333,7 @@ export default function Sidebar() {
                                         lineHeight: 1.3,
                                     }}
                                 >
-                                    {MOCK_USER.name}
+                                    {user.name || "Usuário"}
                                 </p>
                                 <p
                                     style={{
@@ -311,7 +345,7 @@ export default function Sidebar() {
                                         lineHeight: 1.3,
                                     }}
                                 >
-                                    {MOCK_USER.email}
+                                    {user.email || "—"}
                                 </p>
                             </div>
                         )}

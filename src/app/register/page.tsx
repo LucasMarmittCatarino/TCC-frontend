@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import RegisterForm from "./RegisterForm";
 
 export const metadata: Metadata = {
-    title: "Cadastro | TCC",
+    title: "Cadastro — Editaly",
     description: "Crie sua conta",
 };
 

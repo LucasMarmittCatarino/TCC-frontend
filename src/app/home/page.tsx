@@ -5,6 +5,23 @@ import { useRouter } from "next/navigation";
 import { ToastContainer } from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
 
+// ─── Topic progress helpers ────────────────────────────────────────────────────
+
+const TOTAL_TOPICS = 6; // same count as MOCK_TOPICS in edital/[id]/page.tsx
+
+function getEdictProgress(edictId: number): number {
+    if (typeof window === "undefined") return 0;
+    const key = `edict_topics_${edictId}`;
+    const saved = localStorage.getItem(key);
+    if (!saved) return 0;
+    try {
+        const completedIds: number[] = JSON.parse(saved);
+        return Math.round((completedIds.length / TOTAL_TOPICS) * 100);
+    } catch {
+        return 0;
+    }
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Edict {
@@ -88,17 +105,17 @@ const STATUS_LABEL: Record<Edict["status"], string> = {
     completed: "Concluído",
 };
 
-const STATUS_PROGRESS: Record<Edict["status"], number> = {
-    not_started: 0,
-    in_progress: 50,
-    completed: 100,
-};
-
 const STATUS_COLOR: Record<Edict["status"], string> = {
     not_started: "var(--muted)",
     in_progress: "var(--primary)",
     completed: "#22c55e",
 };
+
+function progressColor(pct: number): string {
+    if (pct === 100) return "#22c55e";
+    if (pct > 0) return "var(--primary)";
+    return "var(--muted)";
+}
 
 function formatDate(iso: string): string {
     return new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -130,6 +147,10 @@ export default function HomePage() {
     const [edicts, setEdicts] = useState<Edict[]>([]);
     const [loading, setLoading] = useState(true);
     const [deletingId, setDeletingId] = useState<number | null>(null);
+    const [edictProgress, setEdictProgress] = useState<Record<number, number>>({});
+
+    // ── Set page title ───────────────────────────────────────────────────────
+    useEffect(() => { document.title = "Dashboard — Editaly"; }, []);
 
     // ── Load user name ───────────────────────────────────────────────────────
     useEffect(() => {
@@ -162,6 +183,26 @@ export default function HomePage() {
 
     useEffect(() => { fetchEdicts(); }, [fetchEdicts]);
 
+    // ── Load real progress from localStorage ─────────────────────────────────
+    const refreshProgress = useCallback(() => {
+        setEdictProgress((prev) => {
+            const next: Record<number, number> = { ...prev };
+            edicts.forEach((e) => {
+                next[e.id] = getEdictProgress(e.id);
+            });
+            return next;
+        });
+    }, [edicts]);
+
+    useEffect(() => { refreshProgress(); }, [refreshProgress]);
+
+    // Re-compute progress when the window regains focus (user navigated back)
+    useEffect(() => {
+        const onFocus = () => refreshProgress();
+        window.addEventListener("focus", onFocus);
+        return () => window.removeEventListener("focus", onFocus);
+    }, [refreshProgress]);
+
     // ── Delete edict ─────────────────────────────────────────────────────────
     const handleDelete = async (id: number) => {
         if (!confirm("Tem certeza que deseja excluir este edital?")) return;
@@ -184,7 +225,7 @@ export default function HomePage() {
     // ── Derived stats ────────────────────────────────────────────────────────
     const totalAbertos = edicts.length;
     const progressoMedio = edicts.length > 0
-        ? Math.round(edicts.reduce((acc, e) => acc + STATUS_PROGRESS[e.status], 0) / edicts.length)
+        ? Math.round(edicts.reduce((acc, e) => acc + (edictProgress[e.id] ?? 0), 0) / edicts.length)
         : 0;
     const atLimit = edicts.length >= EDICT_LIMIT;
 
@@ -305,8 +346,8 @@ export default function HomePage() {
 
                     {/* Edict cards */}
                     {!loading && edicts.map((edict) => {
-                        const progress = STATUS_PROGRESS[edict.status];
-                        const color = STATUS_COLOR[edict.status];
+                        const progress = edictProgress[edict.id] ?? 0;
+                        const color = progressColor(progress);
                         const label = STATUS_LABEL[edict.status];
                         const isDeleting = deletingId === edict.id;
 

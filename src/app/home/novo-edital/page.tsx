@@ -104,6 +104,9 @@ export default function NovoEditalPage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [trailName, setTrailName] = useState("");
+
+    // ── Page title ───────────────────────────────────────────────────────────
+    useEffect(() => { document.title = "Novo Edital — Editaly"; }, []);
     const [file, setFile] = useState<File | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [fileError, setFileError] = useState<string | null>(null);
@@ -112,6 +115,7 @@ export default function NovoEditalPage() {
     const [pageState, setPageState] = useState<PageState>("idle");
     const [progress, setProgress] = useState(0);
     const [stepLabel, setStepLabel] = useState(PROGRESS_STEPS[0]);
+    const [createdEdictId, setCreatedEdictId] = useState<number | null>(null);
 
     // ── Animação de progresso ────────────────────────────────────────────────
 
@@ -212,6 +216,8 @@ export default function NovoEditalPage() {
             const formData = new FormData();
             formData.append("edict[pdf]", file);
             formData.append("edict[status]", "not_started");
+            formData.append("edict[title]", trailName.trim());
+
 
             const res = await fetch(`${API_BASE}/api/v1/edicts`, {
                 method: "POST",
@@ -230,6 +236,12 @@ export default function NovoEditalPage() {
 
             if (!res.ok) {
                 throw new Error("Erro ao enviar edital.");
+            }
+
+            const data = await res.json();
+            if (data.edict?.id) {
+                setCreatedEdictId(data.edict.id);
+                localStorage.setItem("last_edict_id", String(data.edict.id));
             }
             // Sucesso: o useEffect da animação já vai cuidar do estado "done"
         } catch {
@@ -496,26 +508,12 @@ export default function NovoEditalPage() {
                             </div>
                         </div>
 
-                        {/* Botões de ação */}
-                        <div className="flex flex-col sm:flex-row gap-3">
-                            <button
-                                id="btn-novo-edital"
-                                onClick={() => {
-                                    setFile(null);
-                                    setTrailName("");
-                                    setProgress(0);
-                                    setPageState("idle");
-                                    if (fileInputRef.current) fileInputRef.current.value = "";
-                                }}
-                                className="flex-1 flex items-center justify-center gap-2 bg-card border border-card-border hover:border-primary/40 text-foreground px-6 py-3.5 rounded-xl text-sm font-semibold transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30"
-                            >
-                                Enviar outro edital
-                            </button>
-
+                        {/* Botão de ação */}
+                        <div className="flex flex-col gap-3">
                             <button
                                 id="btn-ir-trilha"
-                                onClick={() => router.push("/home/trilha")}
-                                className="flex-1 flex items-center justify-center gap-2.5 bg-primary hover:bg-primary-hover text-white px-6 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-primary/25 hover:shadow-md hover:shadow-primary/40 active:scale-[0.98] cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                onClick={() => router.push(createdEdictId ? `/home/edital/${createdEdictId}` : "/home")}
+                                className="w-full flex items-center justify-center gap-2.5 bg-primary hover:bg-primary-hover text-white px-6 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-primary/25 hover:shadow-md hover:shadow-primary/40 active:scale-[0.98] cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
                             >
                                 Ir para trilha
                                 <IconArrowRight size={16} />

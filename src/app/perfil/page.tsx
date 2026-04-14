@@ -1,15 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-// Placeholder for user context data
-const initialUserData = {
-    name: "Lucas Marmitt",
-    email: "lucas@example.com",
-    avatarUrl: null as string | null,
-};
+// ─── Icons ────────────────────────────────────────────────────────────────────
 
 function IconChevronLeft({ size = 20 }: { size?: number }) {
     return (
@@ -28,7 +23,7 @@ function IconUser({ size = 20 }: { size?: number }) {
     );
 }
 
-function IconCamera({ size = 20 }: { size?: number }) {
+function IconCamera({ size = 16 }: { size?: number }) {
     return (
         <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
@@ -39,47 +34,120 @@ function IconCamera({ size = 20 }: { size?: number }) {
     );
 }
 
+function IconTrash({ size = 14 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+    );
+}
+
+// ─── Allowed types ────────────────────────────────────────────────────────────
+
+const ALLOWED_TYPES = ["image/jpeg", "image/webp", "image/png", "image/gif"];
+const ALLOWED_LABEL = "JPEG, WebP, PNG ou GIF";
+const MAX_AVATAR_MB = 2;
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function ProfilePage() {
     const router = useRouter();
-    const [name, setName] = useState(initialUserData.name);
-    const [email, setEmail] = useState(initialUserData.email);
-    const [avatarPreview, setAvatarPreview] = useState<string | null>(initialUserData.avatarUrl);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [saving, setSaving] = useState(false);
-    const [successMessage, setSuccessMessage] = useState("");
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-            const url = URL.createObjectURL(file);
-            setAvatarPreview(url);
+    const [name, setName]               = useState("");
+    const [email, setEmail]             = useState("");
+    const [avatarUrl, setAvatarUrl]     = useState<string | null>(null);
+    const [avatarError, setAvatarError] = useState<string | null>(null);
+    const [saving, setSaving]           = useState(false);
+    const [successMsg, setSuccessMsg]   = useState("");
+
+    // ── Load from localStorage ───────────────────────────────────────────────
+    useEffect(() => {
+        document.title = "Meu Perfil — Editaly";
+        const stored = localStorage.getItem("auth_user");
+        if (stored) {
+            try {
+                const obj = JSON.parse(stored);
+                setName(obj.name ?? "");
+                setEmail(obj.email ?? "");
+            } catch { /* ignore */ }
         }
+        const savedAvatar = localStorage.getItem("avatar_url");
+        if (savedAvatar) setAvatarUrl(savedAvatar);
+    }, []);
+
+    // ── Handle avatar file pick ──────────────────────────────────────────────
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setAvatarError(null);
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            setAvatarError(`Formato inválido. Use ${ALLOWED_LABEL}.`);
+            return;
+        }
+        if (file.size > MAX_AVATAR_MB * 1024 * 1024) {
+            setAvatarError(`O arquivo deve ter no máximo ${MAX_AVATAR_MB} MB.`);
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const dataUrl = ev.target?.result as string;
+            setAvatarUrl(dataUrl);
+            localStorage.setItem("avatar_url", dataUrl);
+            // Dispatch storage event so Sidebar picks it up in the same tab
+            window.dispatchEvent(new Event("avatar_updated"));
+        };
+        reader.readAsDataURL(file);
+
+        // reset input so same file can be re-selected
+        e.target.value = "";
     };
 
+    const handleRemoveAvatar = () => {
+        setAvatarUrl(null);
+        localStorage.removeItem("avatar_url");
+        window.dispatchEvent(new Event("avatar_updated"));
+    };
+
+    // ── Save profile ─────────────────────────────────────────────────────────
     const handleSave = (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
-        setSuccessMessage("");
+        setSuccessMsg("");
 
-        // Mock API call to save user profile
+        // Update auth_user in localStorage (no API call for profile name/email yet)
+        try {
+            const stored = localStorage.getItem("auth_user");
+            const obj = stored ? JSON.parse(stored) : {};
+            obj.name = name.trim();
+            obj.email = email.trim();
+            localStorage.setItem("auth_user", JSON.stringify(obj));
+        } catch { /* ignore */ }
+
         setTimeout(() => {
             setSaving(false);
-            setSuccessMessage("Perfil atualizado com sucesso!");
-            setTimeout(() => setSuccessMessage(""), 3000);
-        }, 800);
+            setSuccessMsg("Perfil atualizado com sucesso!");
+            setTimeout(() => setSuccessMsg(""), 3000);
+        }, 600);
     };
 
     const handleLogout = () => {
         document.cookie = "auth_token=; path=/; max-age=0";
         localStorage.removeItem("auth_token");
         localStorage.removeItem("auth_user");
+        localStorage.removeItem("avatar_url");
         router.push("/login");
     };
 
+    // ─── Render ───────────────────────────────────────────────────────────────
     return (
-        <div className="min-h-screen bg-neutral-50 px-6 py-12 dark:bg-neutral-900 w-full" style={{ background: "var(--background)" }}>
+        <div className="min-h-screen w-full px-6 py-12" style={{ background: "var(--background)" }}>
             <div className="max-w-4xl mx-auto space-y-8">
-                {/* Cabeçalho */}
+
+                {/* ── Cabeçalho ─────────────────────────────────── */}
                 <div className="space-y-4">
                     <Link
                         href="/home"
@@ -89,7 +157,6 @@ export default function ProfilePage() {
                         <IconChevronLeft size={16} />
                         voltar ao dashboard
                     </Link>
-
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight" style={{ color: "var(--foreground)" }}>
                             Meu Perfil
@@ -100,15 +167,13 @@ export default function ProfilePage() {
                     </div>
                 </div>
 
-                {/* Conteúdo (Dividido em duas colunas) */}
+                {/* ── Grid ──────────────────────────────────────── */}
                 <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-8 items-start">
-                    {/* Coluna Esquerda: Quadrado com Perfil */}
+
+                    {/* ── Coluna Esquerda: avatar + logout ──────── */}
                     <div
                         className="rounded-2xl p-6 flex flex-col items-center text-center shadow-sm"
-                        style={{
-                            backgroundColor: "var(--card-bg)",
-                            border: "1px solid var(--card-border)",
-                        }}
+                        style={{ backgroundColor: "var(--card-bg)", border: "1px solid var(--card-border)" }}
                     >
                         {/* Avatar */}
                         <div className="relative group mb-4">
@@ -117,59 +182,83 @@ export default function ProfilePage() {
                                 style={{
                                     borderColor: "var(--card-border)",
                                     background: "linear-gradient(135deg, var(--primary), #818cf8)",
-                                    color: "white"
+                                    color: "white",
                                 }}
                             >
-                                {avatarPreview ? (
-                                    <img src={avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                                {avatarUrl ? (
+                                    <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
                                 ) : (
                                     <IconUser size={40} />
                                 )}
                             </div>
-                            
+
+                            {/* Camera button */}
                             <button
+                                id="btn-trocar-avatar"
                                 type="button"
                                 onClick={() => fileInputRef.current?.click()}
-                                className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md border hover:scale-105 transition-transform"
+                                className="absolute bottom-0 right-0 w-8 h-8 rounded-full flex items-center justify-center shadow-md border hover:scale-105 transition-transform cursor-pointer"
                                 style={{
                                     backgroundColor: "var(--card-bg)",
                                     borderColor: "var(--card-border)",
-                                    color: "var(--foreground)"
+                                    color: "var(--foreground)",
                                 }}
                                 title="Trocar foto"
                             >
                                 <IconCamera size={16} />
                             </button>
-                            
+
                             <input
-                                type="file"
-                                accept="image/*"
                                 ref={fileInputRef}
+                                id="avatar-input"
+                                type="file"
+                                accept="image/jpeg,image/webp,image/png,image/gif"
                                 onChange={handleFileChange}
                                 className="hidden"
                             />
                         </div>
 
-                        {/* Nome e Email */}
-                        <h2 className="text-xl font-bold mb-1" style={{ color: "var(--foreground)" }}>{name}</h2>
-                        <p className="text-sm font-medium mb-8" style={{ color: "var(--muted)" }}>{email}</p>
+                        {/* Avatar error */}
+                        {avatarError && (
+                            <p className="text-xs text-red-400 mb-2 px-2">{avatarError}</p>
+                        )}
 
-                        {/* Botão Sair */}
+                        {/* Remove avatar */}
+                        {avatarUrl && (
+                            <button
+                                id="btn-remover-avatar"
+                                type="button"
+                                onClick={handleRemoveAvatar}
+                                className="flex items-center gap-1.5 text-xs text-muted hover:text-red-400 transition-colors mb-3 cursor-pointer"
+                            >
+                                <IconTrash size={12} />
+                                Remover foto
+                            </button>
+                        )}
+
+                        {/* Formats hint */}
+                        <p className="text-[11px] mb-6" style={{ color: "var(--muted)" }}>
+                            {ALLOWED_LABEL} · máx. {MAX_AVATAR_MB} MB
+                        </p>
+
+                        {/* Name & Email */}
+                        <h2 className="text-xl font-bold mb-1" style={{ color: "var(--foreground)" }}>{name || "Usuário"}</h2>
+                        <p className="text-sm font-medium mb-8" style={{ color: "var(--muted)" }}>{email || "—"}</p>
+
+                        {/* Logout */}
                         <button
+                            id="btn-logout"
                             onClick={handleLogout}
-                            className="w-full py-2.5 px-4 rounded-lg font-medium border border-rose-500 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
+                            className="w-full py-2.5 px-4 rounded-lg font-medium border border-rose-500 text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
                         >
                             Sair da conta
                         </button>
                     </div>
 
-                    {/* Coluna Direita: Formulário */}
+                    {/* ── Coluna Direita: formulário ─────────────── */}
                     <div
                         className="rounded-2xl p-8 shadow-sm"
-                        style={{
-                            backgroundColor: "var(--card-bg)",
-                            border: "1px solid var(--card-border)",
-                        }}
+                        style={{ backgroundColor: "var(--card-bg)", border: "1px solid var(--card-border)" }}
                     >
                         <div className="mb-6">
                             <h2 className="text-2xl font-bold" style={{ color: "var(--foreground)" }}>
@@ -187,13 +276,18 @@ export default function ProfilePage() {
                                 <h3 className="text-lg font-semibold mb-4" style={{ color: "var(--foreground)" }}>
                                     Informações Pessoais
                                 </h3>
-                                
+
                                 <div className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
+                                        <label
+                                            htmlFor="profile-name"
+                                            className="block text-sm font-medium mb-1.5"
+                                            style={{ color: "var(--foreground)" }}
+                                        >
                                             Nome Completo
                                         </label>
                                         <input
+                                            id="profile-name"
                                             type="text"
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
@@ -201,19 +295,24 @@ export default function ProfilePage() {
                                             style={{
                                                 backgroundColor: "var(--card-bg)",
                                                 borderColor: "var(--card-border)",
-                                                color: "var(--foreground)"
+                                                color: "var(--foreground)",
                                             }}
-                                            onFocus={(e) => e.target.style.borderColor = "var(--primary)"}
-                                            onBlur={(e) => e.target.style.borderColor = "var(--card-border)"}
+                                            onFocus={(e) => (e.target.style.borderColor = "var(--primary)")}
+                                            onBlur={(e) => (e.target.style.borderColor = "var(--card-border)")}
                                             required
                                         />
                                     </div>
 
                                     <div>
-                                        <label className="block text-sm font-medium mb-1.5" style={{ color: "var(--foreground)" }}>
+                                        <label
+                                            htmlFor="profile-email"
+                                            className="block text-sm font-medium mb-1.5"
+                                            style={{ color: "var(--foreground)" }}
+                                        >
                                             E-mail
                                         </label>
                                         <input
+                                            id="profile-email"
                                             type="email"
                                             value={email}
                                             onChange={(e) => setEmail(e.target.value)}
@@ -221,10 +320,10 @@ export default function ProfilePage() {
                                             style={{
                                                 backgroundColor: "var(--card-bg)",
                                                 borderColor: "var(--card-border)",
-                                                color: "var(--foreground)"
+                                                color: "var(--foreground)",
                                             }}
-                                            onFocus={(e) => e.target.style.borderColor = "var(--primary)"}
-                                            onBlur={(e) => e.target.style.borderColor = "var(--card-border)"}
+                                            onFocus={(e) => (e.target.style.borderColor = "var(--primary)")}
+                                            onBlur={(e) => (e.target.style.borderColor = "var(--card-border)")}
                                             required
                                         />
                                     </div>
@@ -233,21 +332,20 @@ export default function ProfilePage() {
 
                             <div className="pt-4 flex items-center justify-between">
                                 <div>
-                                    {successMessage && (
-                                        <span className="text-sm font-medium text-green-500">
-                                            {successMessage}
-                                        </span>
+                                    {successMsg && (
+                                        <span className="text-sm font-medium text-green-500">{successMsg}</span>
                                     )}
                                 </div>
                                 <button
+                                    id="btn-salvar-perfil"
                                     type="submit"
                                     disabled={saving}
-                                    className="px-6 py-2.5 rounded-lg font-medium transition-opacity"
+                                    className="px-6 py-2.5 rounded-lg font-medium transition-opacity cursor-pointer"
                                     style={{
                                         backgroundColor: "var(--primary)",
                                         color: "white",
                                         opacity: saving ? 0.7 : 1,
-                                        cursor: saving ? "not-allowed" : "pointer"
+                                        cursor: saving ? "not-allowed" : "pointer",
                                     }}
                                 >
                                     {saving ? "Salvando..." : "Salvar Alterações"}

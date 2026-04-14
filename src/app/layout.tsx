@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "TCC",
-  description: "Aplicação TCC",
+  title: "Editaly",
+  description: "Plataforma inteligente de preparação para concursos públicos",
 };
 
 export default function RootLayout({

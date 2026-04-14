@@ -331,6 +331,9 @@ export default function EditalTopicsPage() {
     useEffect(() => {
         fetchEdictInfo();
 
+        // Persist as last visited edict for Sidebar quick access
+        localStorage.setItem("last_edict_id", edictId);
+
         const saved = localStorage.getItem(STORAGE_KEY(edictId));
         const completedIds: number[] = saved ? JSON.parse(saved) : [];
 
@@ -362,6 +365,11 @@ export default function EditalTopicsPage() {
     const totalCount = topics.length;
     const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
     const edictName = edictInfo?.title ?? edictInfo?.pdf_filename ?? `Edital #${edictId}`;
+
+    // ── Page title ───────────────────────────────────────────────────────────────
+    useEffect(() => {
+        document.title = loadingEdict ? "Carregando… — Editaly" : `${edictName} — Editaly`;
+    }, [loadingEdict, edictName]);
 
     // ─── Render ───────────────────────────────────────────────────────────────
 
