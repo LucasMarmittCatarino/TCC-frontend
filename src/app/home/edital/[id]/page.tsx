@@ -160,22 +160,41 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 // ─── Topic Card ───────────────────────────────────────────────────────────────
 
+function IconChevronRight({ size = 14 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+    );
+}
+
 function TopicCard({
     topic,
     index,
+    edictId,
     onToggle,
 }: {
     topic: Topic;
     index: number;
+    edictId: string;
     onToggle: (id: number) => void;
 }) {
+    const router = useRouter();
     const previewSubtopics = topic.subtopics.slice(0, 3);
     const remaining = topic.subtopics.length - previewSubtopics.length;
 
+    const handleCardClick = (e: React.MouseEvent) => {
+        // Prevent navigation when clicking the check button
+        const target = e.target as HTMLElement;
+        if (target.closest(`#topic-check-${topic.id}`)) return;
+        router.push(`/home/edital/${edictId}/topico/${topic.id}`);
+    };
+
     return (
         <div
+            onClick={handleCardClick}
             className={`
-                group relative flex items-start gap-4 p-5 rounded-2xl border transition-all duration-200
+                group relative flex items-start gap-4 p-5 rounded-2xl border transition-all duration-200 cursor-pointer
                 ${topic.completed
                     ? "bg-primary/5 border-primary/25 shadow-sm shadow-primary/10"
                     : "bg-card border-card-border hover:border-primary/30 hover:shadow-md hover:shadow-primary/5"
@@ -188,7 +207,7 @@ function TopicCard({
             {/* ── Left: check circle ─────────────────────── */}
             <button
                 id={`topic-check-${topic.id}`}
-                onClick={() => onToggle(topic.id)}
+                onClick={(e) => { e.stopPropagation(); onToggle(topic.id); }}
                 title={topic.completed ? "Marcar como não concluído" : "Marcar como concluído"}
                 className={`
                     mt-0.5 flex-shrink-0 transition-all duration-200 cursor-pointer rounded-full
@@ -234,7 +253,7 @@ function TopicCard({
                 </div>
             </div>
 
-            {/* ── Right: subtopic count ─────────────────────── */}
+            {/* ── Right: subtopic count + arrow ─────────────── */}
             <div className="flex-shrink-0 flex flex-col items-end gap-1.5 ml-2">
                 <div
                     className={`
@@ -249,6 +268,9 @@ function TopicCard({
                     <span>{topic.subtopics.length}</span>
                 </div>
                 <span className="text-[10px] text-muted/60 whitespace-nowrap">subtópicos</span>
+                <span className="text-muted/40 group-hover:text-primary/60 transition-colors mt-0.5">
+                    <IconChevronRight size={13} />
+                </span>
             </div>
 
             {/* Completed overlay shimmer */}
@@ -473,6 +495,7 @@ export default function EditalTopicsPage() {
                                 key={topic.id}
                                 topic={topic}
                                 index={i}
+                                edictId={edictId}
                                 onToggle={handleToggle}
                             />
                         ))}

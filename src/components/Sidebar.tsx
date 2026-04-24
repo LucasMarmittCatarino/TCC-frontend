@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -71,6 +71,11 @@ const navItems = [
 
 // ─── Sidebar ───────────────────────────────────────────────────────────────────
 
+// ─── Per-user localStorage key for last trail location ───────────────────────
+function trailPathKey(userId?: string | number): string {
+    return userId ? `trail_path_${userId}` : "trail_path_guest";
+}
+
 export default function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
     const pathname = usePathname();
@@ -79,33 +84,64 @@ export default function Sidebar() {
     const width = collapsed ? "72px" : "240px";
 
     // ── Real user from localStorage ──────────────────────────────────────────
-    const [user, setUser] = useState({ name: "", email: "" });
+    const [user, setUser] = useState({ name: "", email: "", id: "" });
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-    const [lastEdictId, setLastEdictId] = useState<string | null>(null);
+    const [lastTrailPath, setLastTrailPath] = useState<string | null>(null);
+    const userIdRef = useRef<string>("");
+
+    // Track trail path: every time we're inside /home/edital/... persist the full path
+    const prevPathname = useRef<string | null>(null);
+    useEffect(() => {
+        const key = trailPathKey(userIdRef.current);
+        if (pathname.startsWith("/home/edital")) {
+            localStorage.setItem(key, pathname);
+            setLastTrailPath(pathname);
+        } else if (prevPathname.current?.startsWith("/home/edital")) {
+            // leaving the trail — keep the last trail path as-is so we can resume
+            const saved = localStorage.getItem(key);
+            if (saved) setLastTrailPath(saved);
+        }
+        prevPathname.current = pathname;
+    }, [pathname]);
 
     useEffect(() => {
-        const stored = localStorage.getItem("auth_user");
-        if (stored) {
+        const loadUser = () => {
             try {
-                const obj = JSON.parse(stored);
-                setUser({ name: obj.name ?? "", email: obj.email ?? "" });
+                const stored = localStorage.getItem("auth_user");
+                if (stored) {
+                    const obj = JSON.parse(stored);
+                    const uid = String(obj.id ?? obj.email ?? "");
+                    userIdRef.current = uid;
+                    setUser({ name: obj.name ?? "", email: obj.email ?? "", id: uid });
+                    setAvatarUrl(obj.avatar_url ?? null);
+
+                    // Restore per-user trail path
+                    const saved = localStorage.getItem(trailPathKey(uid));
+                    if (saved) setLastTrailPath(saved);
+                } else {
+                    setAvatarUrl(null);
+                }
             } catch { /* ignore */ }
-        }
-        setAvatarUrl(localStorage.getItem("avatar_url"));
-        setLastEdictId(localStorage.getItem("last_edict_id"));
+        };
+
+        loadUser();
 
         // Listen for avatar changes dispatched by the profile page
-        const onAvatarUpdate = () => {
-            setAvatarUrl(localStorage.getItem("avatar_url"));
-        };
-        window.addEventListener("avatar_updated", onAvatarUpdate);
-        return () => window.removeEventListener("avatar_updated", onAvatarUpdate);
+        window.addEventListener("avatar_updated", loadUser);
+        return () => window.removeEventListener("avatar_updated", loadUser);
     }, []);
 
     const handleLogout = () => {
         document.cookie = "auth_token=; path=/; max-age=0";
+        // Don't erase the per-user trail path on logout — it must persist across sessions
         localStorage.removeItem("auth_token");
         localStorage.removeItem("auth_user");
+        localStorage.removeItem("last_edict_id");
+        // Legacy cleanup
+        localStorage.removeItem("avatar_url");
+        localStorage.removeItem("trail_path_guest");
+        setLastTrailPath(null);
+        userIdRef.current = "";
         router.push("/login");
     };
 
@@ -215,13 +251,54 @@ export default function Sidebar() {
             {/* ── Nav items ─────────────────────────────────── */}
             <nav style={{ flex: 1, padding: "12px 8px", display: "flex", flexDirection: "column", gap: "2px" }}>
                 {navItems.map((item) => {
-                    const href = item.dynamicHref
-                        ? (lastEdictId ? `/home/edital/${lastEdictId}` : "/home")
+                    const isTrail = item.dynamicHref;
+                    const trailLocked = isTrail && !lastTrailPath;
+                    const href = isTrail
+                        ? (lastTrailPath ?? "/home")
                         : item.href;
-                    const isActive = item.dynamicHref
+                    const isActive = isTrail
                         ? pathname.startsWith("/home/edital")
                         : pathname === item.href;
                     const Icon = item.icon;
+
+                    // Disabled state for trail item when no trail visited yet
+                    if (trailLocked) {
+                        return (
+                            <div
+                                key={item.id}
+                                id={`nav-${item.id}`}
+                                title={collapsed ? "Nenhuma trilha iniciada" : undefined}
+                                style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: collapsed ? "center" : "flex-start",
+                                    gap: "12px",
+                                    padding: collapsed ? "10px 0" : "10px 14px",
+                                    borderRadius: "10px",
+                                    color: "var(--muted)",
+                                    opacity: 0.4,
+                                    fontSize: "14px",
+                                    cursor: "not-allowed",
+                                    userSelect: "none",
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    position: "relative",
+                                }}
+                            >
+                                <span style={{ flexShrink: 0 }}><Icon size={20} /></span>
+                                {!collapsed && (
+                                    <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                        {item.label}
+                                        {/* Lock icon */}
+                                        <svg width={11} height={11} fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ flexShrink: 0, opacity: 0.8 }}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                                d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                                        </svg>
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    }
 
                     return (
                         <Link

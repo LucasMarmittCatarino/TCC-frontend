@@ -49,6 +49,25 @@ const ALLOWED_TYPES = ["image/jpeg", "image/webp", "image/png", "image/gif"];
 const ALLOWED_LABEL = "JPEG, WebP, PNG ou GIF";
 const MAX_AVATAR_MB = 2;
 
+// ─── API base ─────────────────────────────────────────────────────────────────
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function getAuthUser(): Record<string, string> | null {
+    try {
+        const stored = localStorage.getItem("auth_user");
+        return stored ? JSON.parse(stored) : null;
+    } catch {
+        return null;
+    }
+}
+
+function getAuthToken(): string | null {
+    return localStorage.getItem("auth_token");
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProfilePage() {
@@ -60,25 +79,34 @@ export default function ProfilePage() {
     const [avatarUrl, setAvatarUrl]     = useState<string | null>(null);
     const [avatarError, setAvatarError] = useState<string | null>(null);
     const [saving, setSaving]           = useState(false);
+    const [avatarSaving, setAvatarSaving] = useState(false);
     const [successMsg, setSuccessMsg]   = useState("");
 
     // ── Load from localStorage ───────────────────────────────────────────────
     useEffect(() => {
         document.title = "Meu Perfil — Editaly";
-        const stored = localStorage.getItem("auth_user");
-        if (stored) {
-            try {
-                const obj = JSON.parse(stored);
-                setName(obj.name ?? "");
-                setEmail(obj.email ?? "");
-            } catch { /* ignore */ }
+        const obj = getAuthUser();
+        if (obj) {
+            setName(obj.name ?? "");
+            setEmail(obj.email ?? "");
+            setAvatarUrl(obj.avatar_url ?? null);
         }
-        const savedAvatar = localStorage.getItem("avatar_url");
-        if (savedAvatar) setAvatarUrl(savedAvatar);
     }, []);
 
+    // ── Update auth_user in localStorage & dispatch event ───────────────────
+    const syncLocalUser = (updates: Record<string, string | null>) => {
+        try {
+            const obj = getAuthUser() ?? {};
+            const merged = { ...obj, ...updates };
+            // Remove null keys
+            Object.keys(merged).forEach((k) => merged[k] === null && delete merged[k]);
+            localStorage.setItem("auth_user", JSON.stringify(merged));
+            window.dispatchEvent(new Event("avatar_updated"));
+        } catch { /* ignore */ }
+    };
+
     // ── Handle avatar file pick ──────────────────────────────────────────────
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         setAvatarError(null);
         const file = e.target.files?.[0];
         if (!file) return;
@@ -93,12 +121,39 @@ export default function ProfilePage() {
         }
 
         const reader = new FileReader();
-        reader.onload = (ev) => {
+        reader.onload = async (ev) => {
             const dataUrl = ev.target?.result as string;
+
+            // Optimistically update UI
             setAvatarUrl(dataUrl);
-            localStorage.setItem("avatar_url", dataUrl);
-            // Dispatch storage event so Sidebar picks it up in the same tab
-            window.dispatchEvent(new Event("avatar_updated"));
+            setAvatarSaving(true);
+
+            try {
+                const token = getAuthToken();
+                const res = await fetch(`${API_BASE}/api/v1/profile`, {
+                    method: "PATCH",
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                    },
+                    body: JSON.stringify({ profile: { avatar_url: dataUrl } }),
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    // Persist the server-confirmed avatar in auth_user
+                    syncLocalUser({ avatar_url: data.user?.avatar_url ?? dataUrl });
+                } else {
+                    // Server error — still keep the local preview but warn
+                    setAvatarError("Não foi possível salvar o avatar no servidor.");
+                    syncLocalUser({ avatar_url: dataUrl });
+                }
+            } catch {
+                setAvatarError("Erro de conexão ao salvar avatar.");
+                syncLocalUser({ avatar_url: dataUrl });
+            } finally {
+                setAvatarSaving(false);
+            }
         };
         reader.readAsDataURL(file);
 
@@ -106,39 +161,77 @@ export default function ProfilePage() {
         e.target.value = "";
     };
 
-    const handleRemoveAvatar = () => {
+    const handleRemoveAvatar = async () => {
         setAvatarUrl(null);
-        localStorage.removeItem("avatar_url");
-        window.dispatchEvent(new Event("avatar_updated"));
+        setAvatarSaving(true);
+
+        try {
+            const token = getAuthToken();
+            await fetch(`${API_BASE}/api/v1/profile`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ profile: { avatar_url: "" } }),
+            });
+        } catch { /* ignore */ } finally {
+            setAvatarSaving(false);
+        }
+
+        // Remove from local auth_user
+        try {
+            const obj = getAuthUser() ?? {};
+            delete obj.avatar_url;
+            localStorage.setItem("auth_user", JSON.stringify(obj));
+            window.dispatchEvent(new Event("avatar_updated"));
+        } catch { /* ignore */ }
     };
 
-    // ── Save profile ─────────────────────────────────────────────────────────
-    const handleSave = (e: React.FormEvent) => {
+    // ── Save profile (name only — email read-only) ────────────────────────────
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         setSaving(true);
         setSuccessMsg("");
 
-        // Update auth_user in localStorage (no API call for profile name/email yet)
         try {
-            const stored = localStorage.getItem("auth_user");
-            const obj = stored ? JSON.parse(stored) : {};
-            obj.name = name.trim();
-            obj.email = email.trim();
-            localStorage.setItem("auth_user", JSON.stringify(obj));
-        } catch { /* ignore */ }
+            const token = getAuthToken();
+            const res = await fetch(`${API_BASE}/api/v1/profile`, {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ profile: { name: name.trim() } }),
+            });
 
-        setTimeout(() => {
+            if (res.ok) {
+                const data = await res.json();
+                // Update localStorage with server-confirmed values
+                syncLocalUser({
+                    name: data.user?.name ?? name.trim(),
+                    email: data.user?.email ?? email,
+                    ...(data.user?.avatar_url ? { avatar_url: data.user.avatar_url } : {}),
+                });
+                setSuccessMsg("Perfil atualizado com sucesso!");
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setSuccessMsg(data.errors?.[0] ?? "Erro ao atualizar o perfil.");
+            }
+        } catch {
+            // Fallback: update only locally
+            syncLocalUser({ name: name.trim() });
+            setSuccessMsg("Perfil atualizado localmente.");
+        } finally {
             setSaving(false);
-            setSuccessMsg("Perfil atualizado com sucesso!");
             setTimeout(() => setSuccessMsg(""), 3000);
-        }, 600);
+        }
     };
 
     const handleLogout = () => {
         document.cookie = "auth_token=; path=/; max-age=0";
         localStorage.removeItem("auth_token");
         localStorage.removeItem("auth_user");
-        localStorage.removeItem("avatar_url");
         router.push("/login");
     };
 
@@ -192,6 +285,16 @@ export default function ProfilePage() {
                                 )}
                             </div>
 
+                            {/* Saving spinner overlay */}
+                            {avatarSaving && (
+                                <div className="absolute inset-0 rounded-full flex items-center justify-center"
+                                    style={{ background: "rgba(0,0,0,0.45)" }}>
+                                    <svg className="animate-spin" width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth={2}>
+                                        <path strokeLinecap="round" d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
+                                    </svg>
+                                </div>
+                            )}
+
                             {/* Camera button */}
                             <button
                                 id="btn-trocar-avatar"
@@ -204,6 +307,7 @@ export default function ProfilePage() {
                                     color: "var(--foreground)",
                                 }}
                                 title="Trocar foto"
+                                disabled={avatarSaving}
                             >
                                 <IconCamera size={16} />
                             </button>
@@ -230,6 +334,7 @@ export default function ProfilePage() {
                                 type="button"
                                 onClick={handleRemoveAvatar}
                                 className="flex items-center gap-1.5 text-xs text-muted hover:text-red-400 transition-colors mb-3 cursor-pointer"
+                                disabled={avatarSaving}
                             >
                                 <IconTrash size={12} />
                                 Remover foto
@@ -315,17 +420,19 @@ export default function ProfilePage() {
                                             id="profile-email"
                                             type="email"
                                             value={email}
-                                            onChange={(e) => setEmail(e.target.value)}
-                                            className="w-full px-4 py-2.5 rounded-lg outline-none transition-colors border"
+                                            readOnly
+                                            className="w-full px-4 py-2.5 rounded-lg outline-none border"
                                             style={{
                                                 backgroundColor: "var(--card-bg)",
                                                 borderColor: "var(--card-border)",
-                                                color: "var(--foreground)",
+                                                color: "var(--muted)",
+                                                cursor: "default",
+                                                opacity: 0.7,
                                             }}
-                                            onFocus={(e) => (e.target.style.borderColor = "var(--primary)")}
-                                            onBlur={(e) => (e.target.style.borderColor = "var(--card-border)")}
-                                            required
                                         />
+                                        <p className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+                                            O e-mail não pode ser alterado.
+                                        </p>
                                     </div>
                                 </div>
                             </div>
@@ -333,7 +440,9 @@ export default function ProfilePage() {
                             <div className="pt-4 flex items-center justify-between">
                                 <div>
                                     {successMsg && (
-                                        <span className="text-sm font-medium text-green-500">{successMsg}</span>
+                                        <span className={`text-sm font-medium ${successMsg.includes("Erro") || successMsg.includes("Não") ? "text-red-400" : "text-green-500"}`}>
+                                            {successMsg}
+                                        </span>
                                     )}
                                 </div>
                                 <button
