@@ -7,16 +7,16 @@ import { useToast } from "@/hooks/useToast";
 
 // ─── Topic progress helpers ────────────────────────────────────────────────────
 
-const TOTAL_TOPICS = 6; // same count as MOCK_TOPICS in edital/[id]/page.tsx
-
 function getEdictProgress(edictId: number): number {
     if (typeof window === "undefined") return 0;
-    const key = `edict_topics_${edictId}`;
-    const saved = localStorage.getItem(key);
-    if (!saved) return 0;
+    const saved = localStorage.getItem(`edict_topics_${edictId}`);
+    const totalStr = localStorage.getItem(`edict_topics_total_${edictId}`);
+    if (!saved || !totalStr) return 0;
     try {
         const completedIds: number[] = JSON.parse(saved);
-        return Math.round((completedIds.length / TOTAL_TOPICS) * 100);
+        const total = parseInt(totalStr, 10);
+        if (total === 0) return 0;
+        return Math.round((completedIds.length / total) * 100);
     } catch {
         return 0;
     }
@@ -27,7 +27,7 @@ function getEdictProgress(edictId: number): number {
 interface Edict {
     id: number;
     title: string | null;
-    status: "not_started" | "in_progress" | "completed";
+    status: "not_started" | "in_progress" | "completed" | "failed";
     created_at: string;
     pdf_filename: string | null;
     pdf_size: number | null;
@@ -103,12 +103,14 @@ const STATUS_LABEL: Record<Edict["status"], string> = {
     not_started: "Não iniciado",
     in_progress: "Em progresso",
     completed: "Concluído",
+    failed: "Falha no processamento",
 };
 
 const STATUS_COLOR: Record<Edict["status"], string> = {
     not_started: "var(--muted)",
     in_progress: "var(--primary)",
     completed: "#22c55e",
+    failed: "#ef4444",
 };
 
 function progressColor(pct: number): string {

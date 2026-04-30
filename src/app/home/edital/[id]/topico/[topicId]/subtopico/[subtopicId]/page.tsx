@@ -12,74 +12,21 @@ interface Message {
     timestamp: Date;
 }
 
+interface SubtopicInfo {
+    id: number;
+    title: string;
+    topic: {
+        id: number;
+        title: string;
+    };
+}
+
 interface EdictInfo {
     id: number;
     title: string | null;
     pdf_filename: string | null;
     status: string;
 }
-
-// ─── Mock Data (same as parent page) ──────────────────────────────────────────
-
-const MOCK_TOPICS_DATA: Record<number, { title: string; subtopics: { id: number; title: string }[] }> = {
-    1: {
-        title: "Matemática e Raciocínio Lógico",
-        subtopics: [
-            { id: 1, title: "Números e operações" },
-            { id: 2, title: "Porcentagem e proporção" },
-            { id: 3, title: "Probabilidade e estatística" },
-            { id: 4, title: "Lógica proposicional" },
-            { id: 5, title: "Sequências e progressões" },
-        ],
-    },
-    2: {
-        title: "Língua Portuguesa",
-        subtopics: [
-            { id: 1, title: "Interpretação e compreensão textual" },
-            { id: 2, title: "Ortografia e gramática" },
-            { id: 3, title: "Análise sintática" },
-            { id: 4, title: "Semântica e figuras de linguagem" },
-        ],
-    },
-    3: {
-        title: "Ciência da Computação",
-        subtopics: [
-            { id: 1, title: "Algoritmos e estrutura de dados" },
-            { id: 2, title: "Sistemas operacionais" },
-            { id: 3, title: "Bancos de dados relacionais" },
-            { id: 4, title: "Redes de computadores" },
-            { id: 5, title: "Segurança da informação" },
-            { id: 6, title: "Orientação a objetos" },
-        ],
-    },
-    4: {
-        title: "Direito Constitucional",
-        subtopics: [
-            { id: 1, title: "Princípios fundamentais" },
-            { id: 2, title: "Direitos e garantias fundamentais" },
-            { id: 3, title: "Organização do Estado" },
-            { id: 4, title: "Poderes da República" },
-        ],
-    },
-    5: {
-        title: "Direito Administrativo",
-        subtopics: [
-            { id: 1, title: "Atos administrativos" },
-            { id: 2, title: "Licitações e contratos" },
-            { id: 3, title: "Improbidade administrativa" },
-            { id: 4, title: "Controle da administração pública" },
-            { id: 5, title: "Servidores públicos" },
-        ],
-    },
-    6: {
-        title: "Atualidades e Conhecimentos Gerais",
-        subtopics: [
-            { id: 1, title: "Política nacional e internacional" },
-            { id: 2, title: "Economia e meio ambiente" },
-            { id: 3, title: "Ciência e tecnologia" },
-        ],
-    },
-};
 
 // ─── Storage helpers ───────────────────────────────────────────────────────────
 
@@ -182,7 +129,7 @@ function MessageBubble({ message }: { message: Message }) {
             {/* Bubble */}
             <div
                 className={`
-                    max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed
+                    max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap
                     ${isUser
                         ? "bg-primary text-white rounded-tr-sm"
                         : "bg-[#1e293b] border border-[#334155] text-foreground rounded-tl-sm"
@@ -226,47 +173,30 @@ export default function SubtopicChatPage() {
     const params = useParams();
     const router = useRouter();
 
-    const edictId = params.id as string;
-    const topicId = params.topicId as string;
+    const edictId    = params.id as string;
+    const topicId    = params.topicId as string;
     const subtopicId = params.subtopicId as string;
 
-    const [edictInfo, setEdictInfo] = useState<EdictInfo | null>(null);
-    const [subtopicTitle, setSubtopicTitle] = useState<string>("");
-    const [topicTitle, setTopicTitle] = useState<string>("");
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [inputValue, setInputValue] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
+    const [edictInfo, setEdictInfo]       = useState<EdictInfo | null>(null);
+    const [subtopicInfo, setSubtopicInfo] = useState<SubtopicInfo | null>(null);
+    const [loadingInfo, setLoadingInfo]   = useState(true);
+    const [messages, setMessages]         = useState<Message[]>([]);
+    const [inputValue, setInputValue]     = useState("");
+    const [isLoading, setIsLoading]       = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const abortRef = useRef<AbortController | null>(null);
+    const textareaRef    = useRef<HTMLTextAreaElement>(null);
+    const abortRef       = useRef<AbortController | null>(null);
 
-    // Resolve subtopic title from mock
-    useEffect(() => {
-        const numericTopicId = Number(topicId);
-        const numericSubtopicId = Number(subtopicId);
-        const topic = MOCK_TOPICS_DATA[numericTopicId];
-        if (topic) {
-            setTopicTitle(topic.title);
-            const sub = topic.subtopics.find((s) => s.id === numericSubtopicId);
-            if (sub) {
-                setSubtopicTitle(sub.title);
-            }
-        }
-    }, [topicId, subtopicId]);
-
-    // Fetch edict info
+    // ── Fetch edict info ──────────────────────────────────────────────────────
     useEffect(() => {
         async function fetchEdict() {
             try {
-                const res = await fetch(`${API_BASE}/api/v1/edicts`, {
+                const res = await fetch(`${API_BASE}/api/v1/edicts/${edictId}`, {
                     headers: getAuthHeader(),
                 });
                 if (!res.ok) return;
                 const data = await res.json();
-                const found = (data.edicts ?? []).find(
-                    (e: EdictInfo) => String(e.id) === edictId
-                );
-                if (found) setEdictInfo(found);
+                setEdictInfo(data.edict);
             } catch {
                 // silent
             }
@@ -274,19 +204,44 @@ export default function SubtopicChatPage() {
         fetchEdict();
     }, [edictId]);
 
-    // Page title
+    // ── Fetch subtopic info ───────────────────────────────────────────────────
     useEffect(() => {
-        if (subtopicTitle) {
-            document.title = `${subtopicTitle} — Editaly`;
+        async function fetchSubtopic() {
+            setLoadingInfo(true);
+            try {
+                const res = await fetch(
+                    `${API_BASE}/api/v1/edicts/${edictId}/topics/${topicId}/subtopics/${subtopicId}`,
+                    { headers: getAuthHeader() }
+                );
+                if (!res.ok) {
+                    router.push(`/home/edital/${edictId}/topico/${topicId}`);
+                    return;
+                }
+                const data = await res.json();
+                setSubtopicInfo(data.subtopic);
+            } catch {
+                // silent
+            } finally {
+                setLoadingInfo(false);
+            }
         }
-    }, [subtopicTitle]);
+        fetchSubtopic();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edictId, topicId, subtopicId]);
 
-    // Auto-scroll to bottom
+    // ── Page title ────────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (subtopicInfo) {
+            document.title = `${subtopicInfo.title} — Editaly`;
+        }
+    }, [subtopicInfo]);
+
+    // ── Auto-scroll ───────────────────────────────────────────────────────────
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isLoading]);
 
-    // Auto-resize textarea
+    // ── Auto-resize textarea ──────────────────────────────────────────────────
     useEffect(() => {
         const el = textareaRef.current;
         if (!el) return;
@@ -294,8 +249,11 @@ export default function SubtopicChatPage() {
         el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
     }, [inputValue]);
 
-    const edictName = edictInfo?.title ?? edictInfo?.pdf_filename ?? `Edital #${edictId}`;
+    const edictName     = edictInfo?.title ?? edictInfo?.pdf_filename ?? `Edital #${edictId}`;
+    const subtopicTitle = subtopicInfo?.title ?? "";
+    const topicTitle    = subtopicInfo?.topic?.title ?? "";
 
+    // ── Send message ──────────────────────────────────────────────────────────
     const sendMessage = useCallback(
         async (text: string) => {
             const trimmed = text.trim();
@@ -312,34 +270,61 @@ export default function SubtopicChatPage() {
             setInputValue("");
             setIsLoading(true);
 
-            // Simulate AI response (placeholder)
             abortRef.current = new AbortController();
-            try {
-                await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(resolve, 2000);
-                    abortRef.current!.signal.addEventListener("abort", () => {
-                        clearTimeout(timeout);
-                        reject(new DOMException("Aborted", "AbortError"));
-                    });
-                });
 
+            try {
+                // Build history for context (last 6 messages)
+                const historyForApi = [...messages, userMsg]
+                    .slice(-7, -1) // last 6 before current
+                    .map((m) => ({ role: m.role, content: m.content }));
+
+                const res = await fetch(
+                    `${API_BASE}/api/v1/edicts/${edictId}/topics/${topicId}/subtopics/${subtopicId}/chat`,
+                    {
+                        method: "POST",
+                        headers: getAuthHeader(),
+                        body: JSON.stringify({
+                            question: trimmed,
+                            history: historyForApi,
+                        }),
+                        signal: abortRef.current.signal,
+                    }
+                );
+
+                if (!res.ok) {
+                    const errData = await res.json().catch(() => ({}));
+                    throw new Error(errData.error ?? "Erro ao contactar a IA.");
+                }
+
+                const data = await res.json();
                 const aiMsg: Message = {
                     id: crypto.randomUUID(),
                     role: "assistant",
-                    content: `Em breve, a inteligência artificial irá gerar o conteúdo sobre **${subtopicTitle}** com base no edital. Por enquanto, esta é uma interface de demonstração. Sua pergunta foi: "${trimmed}"`,
+                    content: data.answer,
                     timestamp: new Date(),
                 };
                 setMessages((prev) => [...prev, aiMsg]);
             } catch (e: unknown) {
                 if (e instanceof DOMException && e.name === "AbortError") {
-                    // User stopped generation – do nothing
+                    // User stopped generation
+                } else {
+                    const errorMsg: Message = {
+                        id: crypto.randomUUID(),
+                        role: "assistant",
+                        content: e instanceof Error
+                            ? `Erro: ${e.message}`
+                            : "Não foi possível gerar uma resposta. Tente novamente.",
+                        timestamp: new Date(),
+                    };
+                    setMessages((prev) => [...prev, errorMsg]);
                 }
             } finally {
                 setIsLoading(false);
                 abortRef.current = null;
             }
         },
-        [isLoading, subtopicTitle]
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [isLoading, messages, edictId, topicId, subtopicId]
     );
 
     const handleStop = () => {
@@ -409,7 +394,7 @@ export default function SubtopicChatPage() {
                         </button>
                         <span className="hidden md:block shrink-0">/</span>
                         <span className="text-foreground font-medium truncate max-w-[160px]">
-                            {subtopicTitle || "Subtópico"}
+                            {loadingInfo ? "Carregando…" : (subtopicTitle || "Subtópico")}
                         </span>
                     </nav>
 
@@ -438,14 +423,18 @@ export default function SubtopicChatPage() {
 
                             <div className="space-y-2">
                                 <h1 className="text-2xl font-bold text-foreground">
-                                    {subtopicTitle || "Subtópico"}
+                                    {loadingInfo ? (
+                                        <span className="inline-block h-8 w-48 bg-card-border rounded animate-pulse" />
+                                    ) : (
+                                        subtopicTitle || "Subtópico"
+                                    )}
                                 </h1>
                                 <p className="text-sm text-muted max-w-sm">
                                     Faça perguntas sobre este conteúdo. A IA irá explicar, dar exemplos e te ajudar a dominar o tema.
                                 </p>
                             </div>
 
-                            {subtopicTitle && (
+                            {!loadingInfo && subtopicTitle && (
                                 <SuggestionChips
                                     subtopicTitle={subtopicTitle}
                                     onSelect={(text) => {
@@ -491,7 +480,7 @@ export default function SubtopicChatPage() {
                                 onKeyDown={handleKeyDown}
                                 placeholder={`Pergunte sobre ${subtopicTitle || "este subtópico"}…`}
                                 rows={1}
-                                disabled={isLoading}
+                                disabled={isLoading || loadingInfo}
                                 className="flex-1 resize-none bg-transparent text-sm text-foreground placeholder:text-muted/60 focus:outline-none leading-relaxed max-h-40 disabled:opacity-60"
                                 style={{ minHeight: "24px" }}
                             />
@@ -509,7 +498,7 @@ export default function SubtopicChatPage() {
                                 <button
                                     id="btn-send"
                                     onClick={() => sendMessage(inputValue)}
-                                    disabled={!inputValue.trim()}
+                                    disabled={!inputValue.trim() || loadingInfo}
                                     title="Enviar (Enter)"
                                     className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center transition-all duration-200 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-hover hover:scale-105"
                                 >

@@ -16,7 +16,6 @@ interface SubtopicItem {
 interface TopicData {
     id: number;
     title: string;
-    summary: string;
     subtopics: SubtopicItem[];
 }
 
@@ -26,86 +25,6 @@ interface EdictInfo {
     pdf_filename: string | null;
     status: string;
 }
-
-// ─── Mock Data ─────────────────────────────────────────────────────────────────
-
-const MOCK_TOPICS_DATA: Record<number, TopicData> = {
-    1: {
-        id: 1,
-        title: "Matemática e Raciocínio Lógico",
-        summary:
-            "Esta disciplina abrange os fundamentos matemáticos essenciais para concursos públicos, desde operações básicas até raciocínio lógico avançado. O domínio destes conteúdos é indispensável para resolver questões práticas e analíticas presentes nas provas.",
-        subtopics: [
-            { id: 1, title: "Números e operações", status: "not_started" },
-            { id: 2, title: "Porcentagem e proporção", status: "not_started" },
-            { id: 3, title: "Probabilidade e estatística", status: "not_started" },
-            { id: 4, title: "Lógica proposicional", status: "not_started" },
-            { id: 5, title: "Sequências e progressões", status: "not_started" },
-        ],
-    },
-    2: {
-        id: 2,
-        title: "Língua Portuguesa",
-        summary:
-            "O domínio da língua portuguesa é avaliado em diversas dimensões: compreensão e interpretação de textos, correção gramatical, análise sintática e recursos expressivos. Estas competências são fundamentais para performar bem em qualquer concurso público.",
-        subtopics: [
-            { id: 1, title: "Interpretação e compreensão textual", status: "not_started" },
-            { id: 2, title: "Ortografia e gramática", status: "not_started" },
-            { id: 3, title: "Análise sintática", status: "not_started" },
-            { id: 4, title: "Semântica e figuras de linguagem", status: "not_started" },
-        ],
-    },
-    3: {
-        id: 3,
-        title: "Ciência da Computação",
-        summary:
-            "Área que compreende os pilares teóricos e práticos da computação moderna. Os tópicos cobrem desde fundamentos algorítmicos e estruturas de dados até sistemas distribuídos, segurança e paradigmas de programação amplamente cobrados em concursos da área de TI.",
-        subtopics: [
-            { id: 1, title: "Algoritmos e estrutura de dados", status: "not_started" },
-            { id: 2, title: "Sistemas operacionais", status: "not_started" },
-            { id: 3, title: "Bancos de dados relacionais", status: "not_started" },
-            { id: 4, title: "Redes de computadores", status: "not_started" },
-            { id: 5, title: "Segurança da informação", status: "not_started" },
-            { id: 6, title: "Orientação a objetos", status: "not_started" },
-        ],
-    },
-    4: {
-        id: 4,
-        title: "Direito Constitucional",
-        summary:
-            "Estuda a estrutura e os princípios fundamentais do Estado brasileiro conforme a Constituição Federal de 1988. Abrange direitos e garantias fundamentais, organização dos poderes e princípios que norteiam toda a ordem jurídica nacional.",
-        subtopics: [
-            { id: 1, title: "Princípios fundamentais", status: "not_started" },
-            { id: 2, title: "Direitos e garantias fundamentais", status: "not_started" },
-            { id: 3, title: "Organização do Estado", status: "not_started" },
-            { id: 4, title: "Poderes da República", status: "not_started" },
-        ],
-    },
-    5: {
-        id: 5,
-        title: "Direito Administrativo",
-        summary:
-            "Ramo do direito público que regula a organização e o funcionamento da Administração Pública. Temas como atos administrativos, licitações, contratos e controle da administração são constantemente cobrados em concursos federais, estaduais e municipais.",
-        subtopics: [
-            { id: 1, title: "Atos administrativos", status: "not_started" },
-            { id: 2, title: "Licitações e contratos", status: "not_started" },
-            { id: 3, title: "Improbidade administrativa", status: "not_started" },
-            { id: 4, title: "Controle da administração pública", status: "not_started" },
-            { id: 5, title: "Servidores públicos", status: "not_started" },
-        ],
-    },
-    6: {
-        id: 6,
-        title: "Atualidades e Conhecimentos Gerais",
-        summary:
-            "Avalia o grau de atualização do candidato sobre eventos nacionais e internacionais recentes, bem como seu conhecimento sobre temas de ciência, tecnologia, economia e questões socioambientais que impactam a realidade contemporânea.",
-        subtopics: [
-            { id: 1, title: "Política nacional e internacional", status: "not_started" },
-            { id: 2, title: "Economia e meio ambiente", status: "not_started" },
-            { id: 3, title: "Ciência e tecnologia", status: "not_started" },
-        ],
-    },
-};
 
 // ─── Storage helpers ───────────────────────────────────────────────────────────
 
@@ -335,60 +254,66 @@ export default function SubtopicsPage() {
     const [edictInfo, setEdictInfo] = useState<EdictInfo | null>(null);
     const [topicData, setTopicData] = useState<TopicData | null>(null);
     const [subtopics, setSubtopics] = useState<SubtopicItem[]>([]);
-    const [loadingEdict, setLoadingEdict] = useState(true);
+    const [loading, setLoading] = useState(true);
 
     // ── Load edict info ──────────────────────────────────────────────────────
     const fetchEdictInfo = useCallback(async () => {
-        setLoadingEdict(true);
         try {
-            const res = await fetch(`${API_BASE}/api/v1/edicts`, {
+            const res = await fetch(`${API_BASE}/api/v1/edicts/${edictId}`, {
                 headers: getAuthHeader(),
             });
-            if (!res.ok) throw new Error();
-            const data = await res.json();
-            const found = (data.edicts ?? []).find(
-                (e: EdictInfo) => String(e.id) === edictId
-            );
-            if (!found) {
+            if (!res.ok) {
                 toast.error("Edital não encontrado.");
                 router.push("/home");
                 return;
             }
-            setEdictInfo(found);
+            const data = await res.json();
+            setEdictInfo(data.edict);
         } catch {
             toast.error("Não foi possível carregar o edital.");
-        } finally {
-            setLoadingEdict(false);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [edictId]);
 
-    // ── Load topic data + persisted statuses ─────────────────────────────────
-    useEffect(() => {
-        fetchEdictInfo();
+    // ── Load topic data ──────────────────────────────────────────────────────
+    const fetchTopic = useCallback(async () => {
+        try {
+            const res = await fetch(
+                `${API_BASE}/api/v1/edicts/${edictId}/topics/${topicId}`,
+                { headers: getAuthHeader() }
+            );
+            if (!res.ok) {
+                toast.error("Tópico não encontrado.");
+                router.push(`/home/edital/${edictId}`);
+                return;
+            }
+            const data = await res.json();
+            const topic = data.topic as TopicData;
 
-        const numericTopicId = Number(topicId);
-        const data = MOCK_TOPICS_DATA[numericTopicId];
-
-        if (!data) {
-            toast.error("Tópico não encontrado.");
-            router.push(`/home/edital/${edictId}`);
-            return;
+            const saved = loadSubtopicStatuses(edictId, topicId);
+            setTopicData(topic);
+            setSubtopics(
+                topic.subtopics.map((sub) => ({
+                    ...sub,
+                    status: saved[sub.id] ?? "not_started",
+                }))
+            );
+        } catch {
+            toast.error("Erro ao carregar o tópico.");
         }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edictId, topicId]);
 
-        setTopicData(data);
+    useEffect(() => {
+        const init = async () => {
+            setLoading(true);
+            await Promise.all([fetchEdictInfo(), fetchTopic()]);
+            setLoading(false);
+        };
+        init();
+    }, [fetchEdictInfo, fetchTopic]);
 
-        const saved = loadSubtopicStatuses(edictId, topicId);
-        setSubtopics(
-            data.subtopics.map((sub) => ({
-                ...sub,
-                status: saved[sub.id] ?? "not_started",
-            }))
-        );
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [fetchEdictInfo, edictId, topicId]);
-
-    // ── Cycle subtopic status: not_started → in_progress → completed → not_started
+    // ── Cycle subtopic status ─────────────────────────────────────────────────
     const handleCycle = useCallback(
         (subtopicId: number) => {
             setSubtopics((prev) => {
@@ -403,7 +328,6 @@ export default function SubtopicsPage() {
                     return { ...s, status: next };
                 });
 
-                // Persist
                 const statuses: Record<number, SubtopicItem["status"]> = {};
                 updated.forEach((s) => (statuses[s.id] = s.status));
                 saveSubtopicStatuses(edictId, topicId, statuses);
@@ -454,7 +378,7 @@ export default function SubtopicsPage() {
                         onClick={() => router.push(`/home/edital/${edictId}`)}
                         className="hover:text-foreground transition-colors cursor-pointer"
                     >
-                        {loadingEdict ? "Edital" : edictName}
+                        {edictName}
                     </button>
                     <span>/</span>
                     <span className="text-foreground font-medium truncate max-w-[200px]">
@@ -473,43 +397,28 @@ export default function SubtopicsPage() {
                         </span>
                     </div>
 
-                    {topicData ? (
+                    {loading ? (
+                        <div className="h-9 bg-card-border rounded w-72 animate-pulse" />
+                    ) : topicData ? (
                         <h1 className="text-3xl font-bold tracking-tight text-foreground">
                             {topicData.title}
                         </h1>
-                    ) : (
-                        <div className="h-9 bg-card-border rounded w-72 animate-pulse" />
-                    )}
+                    ) : null}
 
                     <p className="text-muted text-sm">
                         {completedCount} de {subtopics.length} subtópicos concluídos
                     </p>
                 </header>
 
-                {/* ── Summary box ──────────────────────────────────── */}
-                {topicData && (
-                    <div className="max-w-3xl w-full">
-                        <div
-                            className="relative rounded-2xl border border-primary/20 bg-primary/5 px-6 py-5 overflow-hidden"
-                            style={{
-                                background:
-                                    "linear-gradient(135deg, rgba(99,102,241,0.07) 0%, rgba(99,102,241,0.02) 100%)",
-                            }}
-                        >
-                            {/* Glow accent */}
-                            <div
-                                className="absolute top-0 left-0 w-1 h-full rounded-l-2xl"
-                                style={{ background: "var(--primary)" }}
-                            />
-                            <p className="text-xs font-semibold uppercase tracking-widest text-primary mb-2 pl-2">
-                                Resumo do conteúdo
-                            </p>
-                            <p className="text-sm text-foreground/80 leading-relaxed pl-2">
-                                {topicData.summary}
-                            </p>
-                        </div>
-                    </div>
-                )}
+                {/* ── Back button (mobile) ─────────────────────────── */}
+                <button
+                    id="btn-voltar-topicos"
+                    onClick={() => router.push(`/home/edital/${edictId}`)}
+                    className="flex items-center gap-2 text-muted hover:text-foreground transition-colors text-sm font-medium cursor-pointer w-fit -mt-4"
+                >
+                    <IconArrowLeft size={14} />
+                    Ver todos os tópicos
+                </button>
 
                 {/* ── Subtopics list ────────────────────────────────── */}
                 <div className="flex flex-col gap-3 max-w-3xl">
@@ -530,17 +439,31 @@ export default function SubtopicsPage() {
                         </span>
                     </div>
 
-                    {subtopics.map((sub, i) => (
-                        <SubtopicCard
-                            key={sub.id}
-                            subtopic={sub}
-                            index={i}
-                            onCycle={handleCycle}
-                            onNavigate={(id) =>
-                                router.push(`/home/edital/${edictId}/topico/${topicId}/subtopico/${id}`)
-                            }
-                        />
-                    ))}
+                    {loading ? (
+                        <>
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="bg-card border border-card-border p-4 rounded-2xl animate-pulse">
+                                    <div className="flex gap-4 items-center">
+                                        <div className="w-6 h-6 rounded-full bg-card-border shrink-0" />
+                                        <div className="flex-1 h-4 bg-card-border rounded w-3/5" />
+                                        <div className="w-20 h-6 bg-card-border rounded-full shrink-0" />
+                                    </div>
+                                </div>
+                            ))}
+                        </>
+                    ) : (
+                        subtopics.map((sub, i) => (
+                            <SubtopicCard
+                                key={sub.id}
+                                subtopic={sub}
+                                index={i}
+                                onCycle={handleCycle}
+                                onNavigate={(id) =>
+                                    router.push(`/home/edital/${edictId}/topico/${topicId}/subtopico/${id}`)
+                                }
+                            />
+                        ))
+                    )}
                 </div>
 
                 {/* ── Quiz button ───────────────────────────────────── */}

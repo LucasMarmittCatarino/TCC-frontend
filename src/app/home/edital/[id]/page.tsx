@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ToastContainer } from "@/components/Toast";
 import { useToast } from "@/hooks/useToast";
@@ -23,77 +23,8 @@ interface EdictInfo {
     id: number;
     title: string | null;
     pdf_filename: string | null;
-    status: string;
+    status: string; // "not_started" | "in_progress" | "completed" | "failed"
 }
-
-// ─── Mock Topics Generator ────────────────────────────────────────────────────
-
-// Mock topics that represent common edital study areas
-const MOCK_TOPICS: Omit<Topic, "completed">[] = [
-    {
-        id: 1,
-        title: "Matemática e Raciocínio Lógico",
-        subtopics: [
-            { id: 1, title: "Números e operações" },
-            { id: 2, title: "Porcentagem e proporção" },
-            { id: 3, title: "Probabilidade e estatística" },
-            { id: 4, title: "Lógica proposicional" },
-            { id: 5, title: "Sequências e progressões" },
-        ],
-    },
-    {
-        id: 2,
-        title: "Língua Portuguesa",
-        subtopics: [
-            { id: 6, title: "Interpretação e compreensão textual" },
-            { id: 7, title: "Ortografia e gramática" },
-            { id: 8, title: "Análise sintática" },
-            { id: 9, title: "Semântica e figuras de linguagem" },
-        ],
-    },
-    {
-        id: 3,
-        title: "Ciência da Computação",
-        subtopics: [
-            { id: 10, title: "Algoritmos e estrutura de dados" },
-            { id: 11, title: "Sistemas operacionais" },
-            { id: 12, title: "Bancos de dados relacionais" },
-            { id: 13, title: "Redes de computadores" },
-            { id: 14, title: "Segurança da informação" },
-            { id: 15, title: "Orientação a objetos" },
-        ],
-    },
-    {
-        id: 4,
-        title: "Direito Constitucional",
-        subtopics: [
-            { id: 16, title: "Princípios fundamentais" },
-            { id: 17, title: "Direitos e garantias fundamentais" },
-            { id: 18, title: "Organização do Estado" },
-            { id: 19, title: "Poderes da República" },
-        ],
-    },
-    {
-        id: 5,
-        title: "Direito Administrativo",
-        subtopics: [
-            { id: 20, title: "Atos administrativos" },
-            { id: 21, title: "Licitações e contratos" },
-            { id: 22, title: "Improbidade administrativa" },
-            { id: 23, title: "Controle da administração pública" },
-            { id: 24, title: "Servidores públicos" },
-        ],
-    },
-    {
-        id: 6,
-        title: "Atualidades e Conhecimentos Gerais",
-        subtopics: [
-            { id: 25, title: "Política nacional e internacional" },
-            { id: 26, title: "Economia e meio ambiente" },
-            { id: 27, title: "Ciência e tecnologia" },
-        ],
-    },
-];
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
@@ -145,6 +76,14 @@ function IconLayers({ size = 14 }: { size?: number }) {
     );
 }
 
+function IconChevronRight({ size = 14 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+    );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = (edictId: string) => `edict_topics_${edictId}`;
@@ -159,14 +98,6 @@ function getAuthHeader(): Record<string, string> {
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 // ─── Topic Card ───────────────────────────────────────────────────────────────
-
-function IconChevronRight({ size = 14 }: { size?: number }) {
-    return (
-        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-    );
-}
 
 function TopicCard({
     topic,
@@ -184,7 +115,6 @@ function TopicCard({
     const remaining = topic.subtopics.length - previewSubtopics.length;
 
     const handleCardClick = (e: React.MouseEvent) => {
-        // Prevent navigation when clicking the check button
         const target = e.target as HTMLElement;
         if (target.closest(`#topic-check-${topic.id}`)) return;
         router.push(`/home/edital/${edictId}/topico/${topic.id}`);
@@ -200,9 +130,7 @@ function TopicCard({
                     : "bg-card border-card-border hover:border-primary/30 hover:shadow-md hover:shadow-primary/5"
                 }
             `}
-            style={{
-                animationDelay: `${index * 60}ms`,
-            }}
+            style={{ animationDelay: `${index * 60}ms` }}
         >
             {/* ── Left: check circle ─────────────────────── */}
             <button
@@ -312,6 +240,59 @@ function ProgressRing({ percent }: { percent: number }) {
     );
 }
 
+// ─── Processing Skeleton ──────────────────────────────────────────────────────
+
+function ProcessingState({ status }: { status: string }) {
+    const isFailed = status === "failed";
+
+    return (
+        <div className="flex flex-col items-center justify-center gap-6 py-16 max-w-md mx-auto text-center">
+            {isFailed ? (
+                <>
+                    <div className="w-16 h-16 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                        <svg width={32} height={32} fill="none" stroke="currentColor" viewBox="0 0 24 24" className="text-red-400">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-red-400 mb-2">Falha no processamento</h2>
+                        <p className="text-sm text-muted leading-relaxed">
+                            Não foi possível extrair o conteúdo deste edital. O PDF pode estar escaneado, protegido ou não conter texto legível.
+                        </p>
+                    </div>
+                </>
+            ) : (
+                <>
+                    <div className="relative w-16 h-16">
+                        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                            <svg width={28} height={28} fill="none" viewBox="0 0 24 24" className="text-primary animate-spin" style={{ animationDuration: "2s" }}>
+                                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={1.5} strokeDasharray="31.4" strokeDashoffset="10" />
+                            </svg>
+                        </div>
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-bold text-foreground mb-2">Processando edital…</h2>
+                        <p className="text-sm text-muted leading-relaxed">
+                            Estamos extraindo e estruturando o conteúdo do seu PDF com IA. Isso pode levar alguns minutos.
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        {[1, 2, 3].map((i) => (
+                            <div
+                                key={i}
+                                className="w-2 h-2 rounded-full bg-primary/60 animate-bounce"
+                                style={{ animationDelay: `${(i - 1) * 200}ms` }}
+                            />
+                        ))}
+                    </div>
+                    <p className="text-xs text-muted/60 italic">Esta página atualiza automaticamente</p>
+                </>
+            )}
+        </div>
+    );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function EditalTopicsPage() {
@@ -323,49 +304,108 @@ export default function EditalTopicsPage() {
 
     const [edictInfo, setEdictInfo] = useState<EdictInfo | null>(null);
     const [topics, setTopics] = useState<Topic[]>([]);
-    const [loadingEdict, setLoadingEdict] = useState(true);
+    const [loading, setLoading] = useState(true);
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Load edict info from API ─────────────────────────────────────────────
-    const fetchEdictInfo = useCallback(async () => {
-        setLoadingEdict(true);
+    const fetchEdict = useCallback(async () => {
         try {
-            const res = await fetch(`${API_BASE}/api/v1/edicts`, {
+            const res = await fetch(`${API_BASE}/api/v1/edicts/${edictId}`, {
                 headers: getAuthHeader(),
             });
-            if (!res.ok) throw new Error();
-            const data = await res.json();
-            const found = (data.edicts ?? []).find((e: EdictInfo) => String(e.id) === edictId);
-            if (!found) {
-                toast.error("Edital não encontrado.");
-                router.push("/home");
-                return;
+            if (!res.ok) {
+                if (res.status === 404) {
+                    toast.error("Edital não encontrado.");
+                    router.push("/home");
+                }
+                return null;
             }
-            setEdictInfo(found);
+            const data = await res.json();
+            return data.edict as EdictInfo;
         } catch {
             toast.error("Não foi possível carregar o edital.");
-        } finally {
-            setLoadingEdict(false);
+            return null;
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [edictId]);
 
-    // ── Load / persist topic completion state ────────────────────────────────
-    useEffect(() => {
-        fetchEdictInfo();
+    const fetchTopics = useCallback(async () => {
+        try {
+            const res = await fetch(`${API_BASE}/api/v1/edicts/${edictId}/topics`, {
+                headers: getAuthHeader(),
+            });
+            if (!res.ok) return [];
+            const data = await res.json();
+            return (data.topics ?? []) as Array<{ id: number; title: string; subtopics: Subtopic[] }>;
+        } catch {
+            return [];
+        }
+    }, [edictId]);
 
-        // Persist as last visited edict for Sidebar quick access
+    // ── Initial load ─────────────────────────────────────────────────────────
+    useEffect(() => {
         localStorage.setItem("last_edict_id", edictId);
 
         const saved = localStorage.getItem(STORAGE_KEY(edictId));
         const completedIds: number[] = saved ? JSON.parse(saved) : [];
 
-        setTopics(
-            MOCK_TOPICS.map((t) => ({
-                ...t,
-                completed: completedIds.includes(t.id),
-            }))
-        );
-    }, [fetchEdictInfo, edictId]);
+        const init = async () => {
+            setLoading(true);
+            const edict = await fetchEdict();
+            if (!edict) { setLoading(false); return; }
+
+            setEdictInfo(edict);
+
+            if (edict.status === "completed") {
+                const rawTopics = await fetchTopics();
+                localStorage.setItem(`edict_topics_total_${edictId}`, String(rawTopics.length));
+                setTopics(rawTopics.map((t) => ({
+                    ...t,
+                    completed: completedIds.includes(t.id),
+                })));
+            }
+
+            setLoading(false);
+        };
+
+        init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edictId]);
+
+    // ── Polling while in_progress ─────────────────────────────────────────────
+    useEffect(() => {
+        if (!edictInfo) return;
+
+        const shouldPoll = edictInfo.status === "in_progress" || edictInfo.status === "not_started";
+
+        if (shouldPoll) {
+            pollingRef.current = setInterval(async () => {
+                const updated = await fetchEdict();
+                if (!updated) return;
+
+                setEdictInfo(updated);
+
+                if (updated.status === "completed") {
+                    clearInterval(pollingRef.current!);
+                    const saved = localStorage.getItem(STORAGE_KEY(edictId));
+                    const completedIds: number[] = saved ? JSON.parse(saved) : [];
+                    const rawTopics = await fetchTopics();
+                    localStorage.setItem(`edict_topics_total_${edictId}`, String(rawTopics.length));
+                    setTopics(rawTopics.map((t) => ({
+                        ...t,
+                        completed: completedIds.includes(t.id),
+                    })));
+                } else if (updated.status === "failed") {
+                    clearInterval(pollingRef.current!);
+                }
+            }, 5000); // poll every 5s
+        }
+
+        return () => {
+            if (pollingRef.current) clearInterval(pollingRef.current);
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edictInfo?.status]);
 
     // ── Toggle completion ─────────────────────────────────────────────────────
     const handleToggle = useCallback(
@@ -387,11 +427,13 @@ export default function EditalTopicsPage() {
     const totalCount = topics.length;
     const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
     const edictName = edictInfo?.title ?? edictInfo?.pdf_filename ?? `Edital #${edictId}`;
+    const isProcessing = edictInfo?.status === "in_progress" || edictInfo?.status === "not_started";
+    const isFailed = edictInfo?.status === "failed";
 
     // ── Page title ───────────────────────────────────────────────────────────────
     useEffect(() => {
-        document.title = loadingEdict ? "Carregando… — Editaly" : `${edictName} — Editaly`;
-    }, [loadingEdict, edictName]);
+        document.title = loading ? "Carregando… — Editaly" : `${edictName} — Editaly`;
+    }, [loading, edictName]);
 
     // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -426,7 +468,7 @@ export default function EditalTopicsPage() {
                                 Trilha de Estudos
                             </span>
                         </div>
-                        {loadingEdict ? (
+                        {loading ? (
                             <div className="animate-pulse">
                                 <div className="h-8 bg-card-border rounded w-64 mb-2" />
                                 <div className="h-4 bg-card-border rounded w-40" />
@@ -436,15 +478,17 @@ export default function EditalTopicsPage() {
                                 <h1 className="text-3xl font-bold tracking-tight text-foreground">
                                     {edictName}
                                 </h1>
-                                <p className="text-muted text-sm">
-                                    {completedCount} de {totalCount} tópicos concluídos
-                                </p>
+                                {!isProcessing && !isFailed && (
+                                    <p className="text-muted text-sm">
+                                        {completedCount} de {totalCount} tópicos concluídos
+                                    </p>
+                                )}
                             </>
                         )}
                     </div>
 
-                    {/* Progress ring card */}
-                    {!loadingEdict && (
+                    {/* Progress ring card — only when completed */}
+                    {!loading && !isProcessing && !isFailed && totalCount > 0 && (
                         <div className="flex items-center gap-5 bg-card border border-card-border px-6 py-4 rounded-2xl shrink-0 shadow-sm">
                             <div className="relative w-[72px] h-[72px] flex items-center justify-center">
                                 <ProgressRing percent={progressPct} />
@@ -468,8 +512,8 @@ export default function EditalTopicsPage() {
                     )}
                 </header>
 
-                {/* ── Topics grid ────────────────────────────────── */}
-                {loadingEdict ? (
+                {/* ── Body ────────────────────────────────────────── */}
+                {loading ? (
                     <div className="space-y-3 max-w-5xl">
                         {[1, 2, 3, 4].map((i) => (
                             <div key={i} className="bg-card border border-card-border p-5 rounded-2xl animate-pulse">
@@ -488,6 +532,18 @@ export default function EditalTopicsPage() {
                             </div>
                         ))}
                     </div>
+                ) : (isProcessing || isFailed) ? (
+                    <ProcessingState status={edictInfo?.status ?? "in_progress"} />
+                ) : topics.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center max-w-md mx-auto">
+                        <div className="w-14 h-14 rounded-2xl bg-card border border-card-border flex items-center justify-center text-muted">
+                            <IconBookOpen size={24} />
+                        </div>
+                        <div>
+                            <p className="text-base font-semibold text-foreground mb-1">Nenhum tópico encontrado</p>
+                            <p className="text-sm text-muted">O processamento foi concluído mas não encontramos tópicos neste edital.</p>
+                        </div>
+                    </div>
                 ) : (
                     <div className="flex flex-col gap-3 max-w-5xl">
                         {topics.map((topic, i) => (
@@ -503,7 +559,7 @@ export default function EditalTopicsPage() {
                 )}
 
                 {/* ── All done banner ─────────────────────────────── */}
-                {!loadingEdict && progressPct === 100 && (
+                {!loading && progressPct === 100 && totalCount > 0 && (
                     <div className="max-w-5xl w-full">
                         <div className="flex items-center gap-4 bg-green-500/10 border border-green-500/25 rounded-2xl px-6 py-4">
                             <div className="w-10 h-10 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center text-green-400 shrink-0">
