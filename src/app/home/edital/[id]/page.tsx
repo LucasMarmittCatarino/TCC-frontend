@@ -19,11 +19,21 @@ interface Topic {
     completed: boolean;
 }
 
+interface CargoOption {
+    codigo: string;
+    nome: string;
+}
+
 interface EdictInfo {
     id: number;
     title: string | null;
     pdf_filename: string | null;
-    status: string; // "not_started" | "in_progress" | "completed" | "failed"
+    // not_started | in_progress | awaiting_role | completed | failed
+    status: string;
+    role_based: boolean;
+    available_roles: CargoOption[];
+    selected_roles: string[];
+    retry_after: number | null;
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -84,6 +94,24 @@ function IconChevronRight({ size = 14 }: { size?: number }) {
     );
 }
 
+function IconBriefcase({ size = 20 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
+        </svg>
+    );
+}
+
+function IconSparkles({ size = 20 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+                d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        </svg>
+    );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = (edictId: string) => `edict_topics_${edictId}`;
@@ -96,6 +124,122 @@ function getAuthHeader(): Record<string, string> {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+// ─── Role Selection Modal ─────────────────────────────────────────────────────
+
+function RoleSelectionModal({
+    roles,
+    onConfirm,
+    isLoading,
+}: {
+    roles: CargoOption[];
+    onConfirm: (cargoCode: string) => void;
+    isLoading: boolean;
+}) {
+    const [selected, setSelected] = useState<string>("");
+
+    return (
+        // Backdrop
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(6px)" }}>
+
+            <div
+                className="w-full max-w-md bg-card border border-card-border rounded-2xl shadow-2xl overflow-hidden"
+                style={{ animation: "fadeInScale 0.2s ease" }}
+            >
+                {/* Header */}
+                <div className="px-6 pt-6 pb-4 border-b border-card-border flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
+                        <IconBriefcase size={18} />
+                    </div>
+                    <div>
+                        <h2 className="text-base font-bold text-foreground">Selecione seu cargo</h2>
+                        <p className="text-xs text-muted mt-0.5">
+                            Encontramos {roles.length} cargo{roles.length !== 1 ? "s" : ""} neste edital
+                        </p>
+                    </div>
+                </div>
+
+                {/* Role list */}
+                <div className="px-4 py-4 max-h-72 overflow-y-auto space-y-2">
+                    {roles.map((role) => {
+                        const isSelected = selected === role.codigo;
+                        return (
+                            <button
+                                key={role.codigo}
+                                onClick={() => setSelected(role.codigo)}
+                                className={`
+                                    w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border transition-all duration-150 cursor-pointer
+                                    ${isSelected
+                                        ? "bg-primary/10 border-primary/40 shadow-sm shadow-primary/10"
+                                        : "bg-background border-card-border hover:border-primary/25 hover:bg-primary/5"
+                                    }
+                                `}
+                            >
+                                {/* Radio indicator */}
+                                <div className={`
+                                    w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors
+                                    ${isSelected ? "border-primary" : "border-muted/40"}
+                                `}>
+                                    {isSelected && (
+                                        <div className="w-2 h-2 rounded-full bg-primary" />
+                                    )}
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                    <p className={`text-sm font-semibold leading-snug ${isSelected ? "text-primary" : "text-foreground"}`}>
+                                        {role.nome}
+                                    </p>
+                                    <p className="text-xs text-muted mt-0.5">{role.codigo}</p>
+                                </div>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Footer */}
+                <div className="px-6 py-4 border-t border-card-border">
+                    <button
+                        id="btn-confirmar-cargo"
+                        onClick={() => selected && onConfirm(selected)}
+                        disabled={!selected || isLoading}
+                        className={`
+                            w-full flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold transition-all duration-150
+                            ${selected && !isLoading
+                                ? "bg-primary hover:bg-primary-hover text-white shadow-sm shadow-primary/25 hover:shadow-md hover:shadow-primary/40 cursor-pointer active:scale-[0.98]"
+                                : "bg-card border border-card-border text-muted cursor-not-allowed opacity-50"
+                            }
+                        `}
+                    >
+                        {isLoading ? (
+                            <>
+                                <svg className="animate-spin" width={16} height={16} fill="none" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2} strokeDasharray="31.4" strokeDashoffset="10" />
+                                </svg>
+                                Gerando trilha…
+                            </>
+                        ) : (
+                            <>
+                                <IconSparkles size={16} />
+                                Gerar trilha para este cargo
+                            </>
+                        )}
+                    </button>
+                    {!selected && (
+                        <p className="text-center text-xs text-muted mt-2">Selecione um cargo para continuar</p>
+                    )}
+                </div>
+            </div>
+
+            <style>{`
+                @keyframes fadeInScale {
+                    from { opacity: 0; transform: scale(0.95) translateY(8px); }
+                    to   { opacity: 1; transform: scale(1) translateY(0); }
+                }
+            `}</style>
+        </div>
+    );
+}
 
 // ─── Topic Card ───────────────────────────────────────────────────────────────
 
@@ -240,7 +384,7 @@ function ProgressRing({ percent }: { percent: number }) {
     );
 }
 
-// ─── Processing Skeleton ──────────────────────────────────────────────────────
+// ─── Processing State ─────────────────────────────────────────────────────────
 
 function ProcessingState({ status }: { status: string }) {
     const isFailed = status === "failed";
@@ -258,7 +402,7 @@ function ProcessingState({ status }: { status: string }) {
                     <div>
                         <h2 className="text-lg font-bold text-red-400 mb-2">Falha no processamento</h2>
                         <p className="text-sm text-muted leading-relaxed">
-                            Não foi possível extrair o conteúdo deste edital. O PDF pode estar escaneado, protegido ou não conter texto legível.
+                            Não foi possível extrair o conteúdo deste edital. O PDF pode estar escaneado, protegido, muito grande ou não conter texto legível.
                         </p>
                     </div>
                 </>
@@ -272,9 +416,9 @@ function ProcessingState({ status }: { status: string }) {
                         </div>
                     </div>
                     <div>
-                        <h2 className="text-lg font-bold text-foreground mb-2">Processando edital…</h2>
+                        <h2 className="text-lg font-bold text-foreground mb-2">Extraindo cargos do edital…</h2>
                         <p className="text-sm text-muted leading-relaxed">
-                            Estamos extraindo e estruturando o conteúdo do seu PDF com IA. Isso pode levar alguns minutos.
+                            O Gemini está varrendo todo o PDF para identificar os cargos e seus conteúdos programáticos. Isso pode levar alguns minutos.
                         </p>
                     </div>
                     <div className="flex gap-2">
@@ -305,6 +449,7 @@ export default function EditalTopicsPage() {
     const [edictInfo, setEdictInfo] = useState<EdictInfo | null>(null);
     const [topics, setTopics] = useState<Topic[]>([]);
     const [loading, setLoading] = useState(true);
+    const [roleConfirming, setRoleConfirming] = useState(false);
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Load edict info from API ─────────────────────────────────────────────
@@ -372,11 +517,14 @@ export default function EditalTopicsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [edictId]);
 
-    // ── Polling while in_progress ─────────────────────────────────────────────
+    // ── Polling while in_progress or not_started ──────────────────────────────
     useEffect(() => {
         if (!edictInfo) return;
 
-        const shouldPoll = edictInfo.status === "in_progress" || edictInfo.status === "not_started";
+        // Faz polling quando está processando (Chamada 1 ou Chamada 2)
+        const shouldPoll =
+            edictInfo.status === "in_progress" ||
+            edictInfo.status === "not_started";
 
         if (shouldPoll) {
             pollingRef.current = setInterval(async () => {
@@ -395,10 +543,12 @@ export default function EditalTopicsPage() {
                         ...t,
                         completed: completedIds.includes(t.id),
                     })));
-                } else if (updated.status === "failed") {
+                } else if (updated.status === "failed" || updated.status === "awaiting_role") {
+                    // Para de fazer polling: awaiting_role = modal de cargo vai aparecer
+                    // failed = estado terminal
                     clearInterval(pollingRef.current!);
                 }
-            }, 5000); // poll every 5s
+            }, 5000); // poll a cada 5s
         }
 
         return () => {
@@ -406,6 +556,33 @@ export default function EditalTopicsPage() {
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [edictInfo?.status]);
+
+    // ── Confirmar cargo selecionado ───────────────────────────────────────────
+    const handleRoleConfirm = useCallback(async (cargoCode: string) => {
+        setRoleConfirming(true);
+        try {
+            const res = await fetch(`${API_BASE}/api/v1/edicts/${edictId}/select_role`, {
+                method: "PATCH",
+                headers: getAuthHeader(),
+                body: JSON.stringify({ cargo_code: cargoCode }),
+            });
+
+            if (!res.ok) {
+                const data = await res.json();
+                toast.error(data.error ?? "Erro ao selecionar cargo.");
+                return;
+            }
+
+            // Backend confirmou: muda para in_progress localmente e o polling vai capturar o completed
+            setEdictInfo((prev) => prev ? { ...prev, status: "in_progress" } : prev);
+            toast.success("Trilha sendo gerada para o cargo selecionado!");
+        } catch {
+            toast.error("Não foi possível selecionar o cargo. Tente novamente.");
+        } finally {
+            setRoleConfirming(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edictId]);
 
     // ── Toggle completion ─────────────────────────────────────────────────────
     const handleToggle = useCallback(
@@ -429,6 +606,7 @@ export default function EditalTopicsPage() {
     const edictName = edictInfo?.title ?? edictInfo?.pdf_filename ?? `Edital #${edictId}`;
     const isProcessing = edictInfo?.status === "in_progress" || edictInfo?.status === "not_started";
     const isFailed = edictInfo?.status === "failed";
+    const isAwaitingRole = edictInfo?.status === "awaiting_role";
 
     // ── Page title ───────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -440,6 +618,15 @@ export default function EditalTopicsPage() {
     return (
         <>
             <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+            {/* ── Modal de seleção de cargo ─────────────────────────────────── */}
+            {isAwaitingRole && edictInfo?.available_roles && edictInfo.available_roles.length > 0 && (
+                <RoleSelectionModal
+                    roles={edictInfo.available_roles}
+                    onConfirm={handleRoleConfirm}
+                    isLoading={roleConfirming}
+                />
+            )}
 
             <div className="flex flex-col w-full min-h-screen p-6 md:p-8 space-y-8">
 
@@ -478,9 +665,14 @@ export default function EditalTopicsPage() {
                                 <h1 className="text-3xl font-bold tracking-tight text-foreground">
                                     {edictName}
                                 </h1>
-                                {!isProcessing && !isFailed && (
+                                {!isProcessing && !isFailed && !isAwaitingRole && (
                                     <p className="text-muted text-sm">
                                         {completedCount} de {totalCount} tópicos concluídos
+                                    </p>
+                                )}
+                                {isAwaitingRole && (
+                                    <p className="text-sm text-primary/80">
+                                        {edictInfo?.available_roles?.length ?? 0} cargo(s) encontrado(s) — aguardando seleção
                                     </p>
                                 )}
                             </>
@@ -488,7 +680,7 @@ export default function EditalTopicsPage() {
                     </div>
 
                     {/* Progress ring card — only when completed */}
-                    {!loading && !isProcessing && !isFailed && totalCount > 0 && (
+                    {!loading && !isProcessing && !isFailed && !isAwaitingRole && totalCount > 0 && (
                         <div className="flex items-center gap-5 bg-card border border-card-border px-6 py-4 rounded-2xl shrink-0 shadow-sm">
                             <div className="relative w-[72px] h-[72px] flex items-center justify-center">
                                 <ProgressRing percent={progressPct} />
@@ -531,6 +723,20 @@ export default function EditalTopicsPage() {
                                 </div>
                             </div>
                         ))}
+                    </div>
+                ) : isAwaitingRole ? (
+                    /* Estado awaiting_role: fundo enquanto modal está aberto */
+                    <div className="flex flex-col items-center justify-center gap-6 py-16 max-w-md mx-auto text-center">
+                        <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                            <IconBriefcase size={28} />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-bold text-foreground mb-2">Cargos identificados!</h2>
+                            <p className="text-sm text-muted leading-relaxed">
+                                Encontramos <strong className="text-foreground">{edictInfo?.available_roles?.length ?? 0} cargo(s)</strong> neste edital.
+                                Selecione o cargo desejado no modal para gerar sua trilha de estudos personalizada.
+                            </p>
+                        </div>
                     </div>
                 ) : (isProcessing || isFailed) ? (
                     <ProcessingState status={edictInfo?.status ?? "in_progress"} />

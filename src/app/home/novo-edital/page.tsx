@@ -82,12 +82,12 @@ function getAuthHeader(): string {
     return typeof window !== "undefined" ? localStorage.getItem("auth_token") ?? "" : "";
 }
 
-// Etapas que aparecem na barra de progresso
+// Etapas que aparecem na barra de progresso do upload (Chamada 1)
 const PROGRESS_STEPS = [
     "Enviando arquivo...",
-    "Lendo conteúdo do edital...",
-    "Identificando matérias...",
-    "Estruturando trilha...",
+    "Lendo o edital com IA...",
+    "Identificando cargos...",
+    "Extraindo conteúdo programático...",
     "Finalizando...",
 ];
 
@@ -140,9 +140,9 @@ export default function NovoEditalPage() {
         const done = setTimeout(() => {
             clearInterval(interval);
             setProgress(100);
-            setStepLabel("Trilha gerada com sucesso!");
+            setStepLabel("Cargos identificados!");
             setPageState("done");
-            toast.success("Trilha de estudos gerada com sucesso!");
+            toast.success("Edital processado! Agora selecione seu cargo.");
         }, TOTAL_DURATION_MS);
 
         return () => {
@@ -276,11 +276,11 @@ export default function NovoEditalPage() {
                 {/* ── Cabeçalho ──────────────────────────────────────── */}
                 <header className="w-full max-w-2xl mb-8 space-y-1">
                     <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                        {pageState === "done" ? "Trilha gerada!" : "Enviar novo edital"}
+                        {pageState === "done" ? "Cargos identificados!" : "Enviar novo edital"}
                     </h1>
                     <p className="text-muted text-base">
                         {pageState === "done"
-                            ? "Sua trilha de estudos está pronta para começar."
+                            ? "Selecione o cargo desejado para gerar sua trilha de estudos."
                             : "Faça upload de um PDF e nossa IA cuidará do resto!"}
                     </p>
                 </header>
@@ -492,7 +492,7 @@ export default function NovoEditalPage() {
                             <div className="space-y-1.5">
                                 <h2 className="text-xl font-bold text-foreground">{trailName}</h2>
                                 <p className="text-sm text-muted">
-                                    Sua trilha de estudos foi gerada e está pronta!
+                                    Os cargos foram identificados! Agora selecione o cargo e gere sua trilha personalizada.
                                 </p>
                             </div>
 
@@ -515,7 +515,7 @@ export default function NovoEditalPage() {
                                 onClick={() => router.push(createdEdictId ? `/home/edital/${createdEdictId}` : "/home")}
                                 className="w-full flex items-center justify-center gap-2.5 bg-primary hover:bg-primary-hover text-white px-6 py-3.5 rounded-xl text-sm font-semibold transition-all shadow-sm shadow-primary/25 hover:shadow-md hover:shadow-primary/40 active:scale-[0.98] cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
                             >
-                                Ir para trilha
+                                Selecionar cargo e gerar trilha
                                 <IconArrowRight size={16} />
                             </button>
                         </div>
