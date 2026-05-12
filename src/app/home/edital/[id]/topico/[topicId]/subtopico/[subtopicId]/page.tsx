@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,46 @@ function getAuthHeader(): Record<string, string> {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+
+// ── Chat persistence ──────────────────────────────────────────────────────────
+const CHAT_KEY = (edictId: string, topicId: string, subtopicId: string) =>
+    `chat_${edictId}_${topicId}_${subtopicId}`;
+
+function loadMessages(edictId: string, topicId: string, subtopicId: string): Message[] {
+    if (typeof window === "undefined") return [];
+    try {
+        const raw = localStorage.getItem(CHAT_KEY(edictId, topicId, subtopicId));
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as Array<Omit<Message, "timestamp"> & { timestamp: string }>;
+        return parsed.map((m) => ({ ...m, timestamp: new Date(m.timestamp) }));
+    } catch { return []; }
+}
+
+function saveMessages(edictId: string, topicId: string, subtopicId: string, msgs: Message[]) {
+    try {
+        localStorage.setItem(CHAT_KEY(edictId, topicId, subtopicId), JSON.stringify(msgs));
+    } catch { /* quota exceeded – silently ignore */ }
+}
+
+// ── Subtopic status helpers (shared with topic page) ─────────────────────────
+const SUBTOPIC_STATUS_KEY = (edictId: string, topicId: string) =>
+    `subtopics_${edictId}_${topicId}`;
+
+function promoteSubtopicStatus(
+    edictId: string,
+    topicId: string,
+    subtopicId: string,
+    targetStatus: "in_progress"
+) {
+    try {
+        const raw = localStorage.getItem(SUBTOPIC_STATUS_KEY(edictId, topicId));
+        const statuses: Record<string, string> = raw ? JSON.parse(raw) : {};
+        if (!statuses[subtopicId] || statuses[subtopicId] === "not_started") {
+            statuses[subtopicId] = targetStatus;
+            localStorage.setItem(SUBTOPIC_STATUS_KEY(edictId, topicId), JSON.stringify(statuses));
+        }
+    } catch { /* ignore */ }
+}
 
 // ─── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -106,6 +148,44 @@ function TypingDots() {
     );
 }
 
+// ─── Markdown renderer for AI messages ──────────────────────────────────────────────
+
+const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
+    // Headings
+    h1: ({ children }) => <h1 className="text-lg font-bold text-foreground mt-4 mb-2 first:mt-0">{children}</h1>,
+    h2: ({ children }) => <h2 className="text-base font-bold text-foreground mt-3 mb-1.5 first:mt-0">{children}</h2>,
+    h3: ({ children }) => <h3 className="text-sm font-bold text-foreground/90 mt-3 mb-1 first:mt-0">{children}</h3>,
+    // Paragraphs
+    p:  ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
+    // Bold & italic
+    strong: ({ children }) => <strong className="font-bold text-foreground">{children}</strong>,
+    em:     ({ children }) => <em className="italic text-foreground/85">{children}</em>,
+    // Lists
+    ul: ({ children }) => <ul className="list-disc list-outside pl-5 mb-2 space-y-0.5">{children}</ul>,
+    ol: ({ children }) => <ol className="list-decimal list-outside pl-5 mb-2 space-y-0.5">{children}</ol>,
+    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+    // Inline code
+    code: ({ children, className }) => {
+        const isBlock = className?.startsWith("language-");
+        if (isBlock) {
+            return (
+                <code className="block bg-black/30 border border-white/10 rounded-lg px-4 py-3 text-xs font-mono text-green-300 overflow-x-auto my-2 whitespace-pre">
+                    {children}
+                </code>
+            );
+        }
+        return <code className="bg-black/30 border border-white/10 rounded px-1.5 py-0.5 text-xs font-mono text-primary/90">{children}</code>;
+    },
+    // Code blocks (pre wrapper)
+    pre: ({ children }) => <>{children}</>,
+    // Blockquote
+    blockquote: ({ children }) => (
+        <blockquote className="border-l-2 border-primary/40 pl-3 my-2 text-muted italic">{children}</blockquote>
+    ),
+    // Horizontal rule
+    hr: () => <hr className="border-white/10 my-3" />,
+};
+
 // ─── Message Bubble ────────────────────────────────────────────────────────────
 
 function MessageBubble({ message }: { message: Message }) {
@@ -129,14 +209,23 @@ function MessageBubble({ message }: { message: Message }) {
             {/* Bubble */}
             <div
                 className={`
-                    max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap
+                    max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed
                     ${isUser
-                        ? "bg-primary text-white rounded-tr-sm"
+                        ? "bg-primary text-white rounded-tr-sm whitespace-pre-wrap"
                         : "bg-[#1e293b] border border-[#334155] text-foreground rounded-tl-sm"
                     }
                 `}
             >
-                {message.content}
+                {isUser ? (
+                    message.content
+                ) : (
+                    <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={markdownComponents}
+                    >
+                        {message.content}
+                    </ReactMarkdown>
+                )}
             </div>
         </div>
     );
@@ -180,12 +269,28 @@ export default function SubtopicChatPage() {
     const [edictInfo, setEdictInfo]       = useState<EdictInfo | null>(null);
     const [subtopicInfo, setSubtopicInfo] = useState<SubtopicInfo | null>(null);
     const [loadingInfo, setLoadingInfo]   = useState(true);
-    const [messages, setMessages]         = useState<Message[]>([]);
+    const [messages, setMessages]         = useState<Message[]>(() => loadMessages(edictId, topicId, subtopicId));
     const [inputValue, setInputValue]     = useState("");
     const [isLoading, setIsLoading]       = useState(false);
-    const messagesEndRef = useRef<HTMLDivElement>(null);
-    const textareaRef    = useRef<HTMLTextAreaElement>(null);
-    const abortRef       = useRef<AbortController | null>(null);
+    const [showScrollBtn, setShowScrollBtn] = useState(false);
+    const messagesEndRef  = useRef<HTMLDivElement>(null);
+    const chatBodyRef     = useRef<HTMLDivElement>(null);
+    const textareaRef     = useRef<HTMLTextAreaElement>(null);
+    const abortRef        = useRef<AbortController | null>(null);
+
+    // Persist messages whenever they change
+    useEffect(() => {
+        saveMessages(edictId, topicId, subtopicId, messages);
+    }, [messages, edictId, topicId, subtopicId]);
+
+    // Promote status on mount if chat already has AI history
+    useEffect(() => {
+        const hasAiHistory = messages.some((m) => m.role === "assistant");
+        if (hasAiHistory) {
+            promoteSubtopicStatus(edictId, topicId, subtopicId, "in_progress");
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ── Fetch edict info ──────────────────────────────────────────────────────
     useEffect(() => {
@@ -236,10 +341,28 @@ export default function SubtopicChatPage() {
         }
     }, [subtopicInfo]);
 
-    // ── Auto-scroll ───────────────────────────────────────────────────────────
-    useEffect(() => {
+    // ── Auto-scroll (only when near bottom) ───────────────────────────────────────
+    const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(() => {
+        const el = chatBodyRef.current;
+        if (!el) return;
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        // Only auto-scroll if user is within 200px of the bottom
+        if (distanceFromBottom < 200) {
+            messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }
     }, [messages, isLoading]);
+
+    // ── Scroll FAB visibility ──────────────────────────────────────────────────
+    const handleChatScroll = () => {
+        const el = chatBodyRef.current;
+        if (!el) return;
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        setShowScrollBtn(distanceFromBottom > 120);
+    };
 
     // ── Auto-resize textarea ──────────────────────────────────────────────────
     useEffect(() => {
@@ -303,7 +426,14 @@ export default function SubtopicChatPage() {
                     content: data.answer,
                     timestamp: new Date(),
                 };
-                setMessages((prev) => [...prev, aiMsg]);
+                setMessages((prev) => {
+                    const updated = [...prev, aiMsg];
+                    // Auto-promote subtopic to in_progress on first AI response
+                    if (prev.filter((m) => m.role === "assistant").length === 0) {
+                        promoteSubtopicStatus(edictId, topicId, subtopicId, "in_progress");
+                    }
+                    return updated;
+                });
             } catch (e: unknown) {
                 if (e instanceof DOMException && e.name === "AbortError") {
                     // User stopped generation
@@ -350,6 +480,10 @@ export default function SubtopicChatPage() {
                 }
                 @keyframes fadeSlideUp {
                     from { opacity: 0; transform: translateY(10px); }
+                    to   { opacity: 1; transform: translateY(0); }
+                }
+                @keyframes fadeIn {
+                    from { opacity: 0; transform: translateY(6px); }
                     to   { opacity: 1; transform: translateY(0); }
                 }
                 .chat-scrollbar::-webkit-scrollbar { width: 4px; }
@@ -406,7 +540,11 @@ export default function SubtopicChatPage() {
                 </header>
 
                 {/* ── Chat body ────────────────────────────────────────── */}
-                <div className="flex-1 overflow-y-auto chat-scrollbar">
+                <div
+                    ref={chatBodyRef}
+                    onScroll={handleChatScroll}
+                    className="flex-1 overflow-y-auto chat-scrollbar relative"
+                >
                     {isEmpty ? (
                         /* Welcome / empty state */
                         <div className="flex flex-col items-center justify-center h-full px-6 py-12 text-center gap-6">
@@ -465,6 +603,21 @@ export default function SubtopicChatPage() {
 
                             <div ref={messagesEndRef} />
                         </div>
+                    )}
+
+                    {/* ↓ Scroll-to-bottom FAB — fixed so it follows the user */}
+                    {showScrollBtn && (
+                        <button
+                            id="btn-scroll-bottom"
+                            onClick={scrollToBottom}
+                            title="Ir para o final"
+                            className="fixed bottom-24 right-5 z-20 w-9 h-9 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center hover:bg-primary-hover hover:scale-105 transition-all duration-200 cursor-pointer"
+                            style={{ animation: "fadeIn 0.2s ease-out" }}
+                        >
+                            <svg width={16} height={16} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
                     )}
                 </div>
 

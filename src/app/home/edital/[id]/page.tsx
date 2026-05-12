@@ -42,7 +42,7 @@ function IconCheckCircle({ filled = false, size = 22 }: { filled?: boolean; size
     if (filled) {
         return (
             <svg width={size} height={size} fill="none" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="12" fill="var(--primary)" />
+                <circle cx="12" cy="12" r="12" fill="#22c55e" />
                 <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -115,6 +115,29 @@ function IconSparkles({ size = 20 }: { size?: number }) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const STORAGE_KEY = (edictId: string) => `edict_topics_${edictId}`;
+
+/** Persists a topic→subtopicIds map so the home page can compute subtopic-level progress */
+function saveSubtopicMap(edictId: string, topics: Array<{ id: number; subtopics: Subtopic[] }>) {
+    try {
+        const map: Record<number, number[]> = {};
+        topics.forEach((t) => { map[t.id] = t.subtopics.map((s) => s.id); });
+        localStorage.setItem(`edict_subtopic_map_${edictId}`, JSON.stringify(map));
+    } catch { /* ignore */ }
+}
+
+/** Returns subtopic completion stats for a topic based on localStorage */
+function getSubtopicProgress(edictId: string, topicId: number, total: number) {
+    if (typeof window === "undefined" || total === 0) return { completed: 0, total, pct: 0 };
+    try {
+        const raw = localStorage.getItem(`subtopics_${edictId}_${topicId}`);
+        if (!raw) return { completed: 0, total, pct: 0 };
+        const statuses: Record<string, string> = JSON.parse(raw);
+        const completed = Object.values(statuses).filter((s) => s === "completed").length;
+        return { completed, total, pct: Math.round((completed / total) * 100) };
+    } catch {
+        return { completed: 0, total, pct: 0 };
+    }
+}
 
 function getAuthHeader(): Record<string, string> {
     const token = typeof window !== "undefined"
@@ -247,112 +270,111 @@ function TopicCard({
     topic,
     index,
     edictId,
-    onToggle,
 }: {
     topic: Topic;
     index: number;
     edictId: string;
-    onToggle: (id: number) => void;
 }) {
     const router = useRouter();
     const previewSubtopics = topic.subtopics.slice(0, 3);
     const remaining = topic.subtopics.length - previewSubtopics.length;
+    const subProgress = getSubtopicProgress(edictId, topic.id, topic.subtopics.length);
 
-    const handleCardClick = (e: React.MouseEvent) => {
-        const target = e.target as HTMLElement;
-        if (target.closest(`#topic-check-${topic.id}`)) return;
-        router.push(`/home/edital/${edictId}/topico/${topic.id}`);
-    };
+    // Derive visual state purely from subtopic completion
+    const topicState: "completed" | "in_progress" | "not_started" =
+        subProgress.pct === 100 ? "completed"
+        : subProgress.pct > 0 ? "in_progress"
+        : "not_started";
+
+    const cardStyle = {
+        completed:   "bg-green-500/5 border-green-500/20 shadow-sm",
+        in_progress: "bg-amber-500/5 border-amber-500/25",
+        not_started: "bg-card border-card-border hover:border-primary/30 hover:shadow-md hover:shadow-primary/5",
+    }[topicState];
+
+    const titleStyle = {
+        completed:   "text-green-400",
+        in_progress: "text-amber-300",
+        not_started: "text-foreground group-hover:text-primary",
+    }[topicState];
+
+    const badgeStyle = {
+        completed:   "bg-green-500/10 border-green-500/20 text-green-400",
+        in_progress: "bg-amber-500/10 border-amber-500/25 text-amber-400",
+        not_started: "bg-background border-card-border text-muted",
+    }[topicState];
+
+    const barColor = {
+        completed:   "#22c55e",
+        in_progress: "linear-gradient(90deg, #f59e0b, #fbbf24)",
+        not_started: "transparent",
+    }[topicState];
 
     return (
         <div
-            onClick={handleCardClick}
+            onClick={() => router.push(`/home/edital/${edictId}/topico/${topic.id}`)}
             className={`
-                group relative flex items-start gap-4 p-5 rounded-2xl border transition-all duration-200 cursor-pointer
-                ${topic.completed
-                    ? "bg-primary/5 border-primary/25 shadow-sm shadow-primary/10"
-                    : "bg-card border-card-border hover:border-primary/30 hover:shadow-md hover:shadow-primary/5"
-                }
+                group relative flex flex-col gap-3 p-5 rounded-2xl border transition-all duration-200 cursor-pointer
+                ${cardStyle}
             `}
             style={{ animationDelay: `${index * 60}ms` }}
         >
-            {/* ── Left: check circle ─────────────────────── */}
-            <button
-                id={`topic-check-${topic.id}`}
-                onClick={(e) => { e.stopPropagation(); onToggle(topic.id); }}
-                title={topic.completed ? "Marcar como não concluído" : "Marcar como concluído"}
-                className={`
-                    mt-0.5 flex-shrink-0 transition-all duration-200 cursor-pointer rounded-full
-                    focus:outline-none focus:ring-2 focus:ring-primary/40
-                    ${topic.completed
-                        ? "text-primary scale-110"
-                        : "text-muted hover:text-primary hover:scale-110"
-                    }
-                `}
-            >
-                <IconCheckCircle filled={topic.completed} size={24} />
-            </button>
+            {/* Main row */}
+            <div className="flex items-start gap-4">
+                {/* ── Center: title + subtopics preview ── */}
+                <div className="flex-1 min-w-0">
+                    <h3 className={`text-base font-bold leading-snug transition-colors duration-200 ${titleStyle}`}>
+                        {topic.title}
+                    </h3>
 
-            {/* ── Center: title + subtopics preview ────────── */}
-            <div className="flex-1 min-w-0">
-                <h3
-                    className={`text-base font-bold leading-snug transition-colors duration-200 
-                        ${topic.completed ? "text-primary" : "text-foreground group-hover:text-primary"}`}
-                >
-                    {topic.title}
-                </h3>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                        {previewSubtopics.map((sub) => (
+                            <span
+                                key={sub.id}
+                                className={`
+                                    text-xs px-2.5 py-0.5 rounded-full border transition-colors
+                                    ${topicState === "completed"
+                                        ? "bg-green-500/10 border-green-500/20 text-green-400/80"
+                                        : topicState === "in_progress"
+                                        ? "bg-amber-500/10 border-amber-500/20 text-amber-400/80"
+                                        : "bg-background border-card-border text-muted"
+                                    }
+                                `}
+                            >
+                                {sub.title}
+                            </span>
+                        ))}
+                        {remaining > 0 && (
+                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-background border border-card-border text-muted/60 italic">
+                                +{remaining} mais
+                            </span>
+                        )}
+                    </div>
+                </div>
 
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                    {previewSubtopics.map((sub) => (
-                        <span
-                            key={sub.id}
-                            className={`
-                                text-xs px-2.5 py-0.5 rounded-full border transition-colors
-                                ${topic.completed
-                                    ? "bg-primary/10 border-primary/20 text-primary/80"
-                                    : "bg-background border-card-border text-muted"
-                                }
-                            `}
-                        >
-                            {sub.title}
-                        </span>
-                    ))}
-                    {remaining > 0 && (
-                        <span className="text-xs px-2.5 py-0.5 rounded-full bg-background border border-card-border text-muted/60 italic">
-                            +{remaining} mais
-                        </span>
-                    )}
+                {/* ── Right: subtopic count + arrow ── */}
+                <div className="flex-shrink-0 flex flex-col items-end gap-1.5 ml-2">
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-colors ${badgeStyle}`}>
+                        <IconLayers size={12} />
+                        <span>{subProgress.completed}/{topic.subtopics.length}</span>
+                    </div>
+                    <span className="text-[10px] text-muted/60 whitespace-nowrap">concluídos</span>
+                    <span className="text-muted/40 group-hover:text-primary/60 transition-colors mt-0.5">
+                        <IconChevronRight size={13} />
+                    </span>
                 </div>
             </div>
 
-            {/* ── Right: subtopic count + arrow ─────────────── */}
-            <div className="flex-shrink-0 flex flex-col items-end gap-1.5 ml-2">
-                <div
-                    className={`
-                        flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-colors
-                        ${topic.completed
-                            ? "bg-primary/10 border-primary/20 text-primary"
-                            : "bg-background border-card-border text-muted"
-                        }
-                    `}
-                >
-                    <IconLayers size={12} />
-                    <span>{topic.subtopics.length}</span>
+            {/* Subtopic progress bar */}
+            {topic.subtopics.length > 0 && (
+                <div>
+                    <div className="h-1.5 rounded-full bg-background border border-card-border overflow-hidden">
+                        <div
+                            className="h-full rounded-full transition-all duration-700 ease-out"
+                            style={{ width: `${subProgress.pct}%`, background: barColor }}
+                        />
+                    </div>
                 </div>
-                <span className="text-[10px] text-muted/60 whitespace-nowrap">subtópicos</span>
-                <span className="text-muted/40 group-hover:text-primary/60 transition-colors mt-0.5">
-                    <IconChevronRight size={13} />
-                </span>
-            </div>
-
-            {/* Completed overlay shimmer */}
-            {topic.completed && (
-                <div
-                    className="absolute inset-0 rounded-2xl pointer-events-none"
-                    style={{
-                        background: "radial-gradient(ellipse at 0% 50%, rgba(99,102,241,0.04) 0%, transparent 70%)",
-                    }}
-                />
             )}
         </div>
     );
@@ -360,10 +382,12 @@ function TopicCard({
 
 // ─── Progress Ring ────────────────────────────────────────────────────────────
 
+
 function ProgressRing({ percent }: { percent: number }) {
     const r = 30;
     const circ = 2 * Math.PI * r;
     const offset = circ - (percent / 100) * circ;
+    const color = percent === 100 ? "#22c55e" : percent > 0 ? "#f59e0b" : "var(--primary)";
 
     return (
         <svg width={72} height={72} viewBox="0 0 72 72" className="-rotate-90">
@@ -373,12 +397,12 @@ function ProgressRing({ percent }: { percent: number }) {
                 cy="36"
                 r={r}
                 fill="none"
-                stroke="var(--primary)"
+                stroke={color}
                 strokeWidth="6"
                 strokeLinecap="round"
                 strokeDasharray={circ}
                 strokeDashoffset={offset}
-                style={{ transition: "stroke-dashoffset 0.6s ease" }}
+                style={{ transition: "stroke-dashoffset 0.6s ease, stroke 0.4s ease" }}
             />
         </svg>
     );
@@ -386,7 +410,7 @@ function ProgressRing({ percent }: { percent: number }) {
 
 // ─── Processing State ─────────────────────────────────────────────────────────
 
-function ProcessingState({ status }: { status: string }) {
+function ProcessingState({ status, onRetry, retrying }: { status: string; onRetry?: () => void; retrying?: boolean }) {
     const isFailed = status === "failed";
 
     return (
@@ -405,6 +429,37 @@ function ProcessingState({ status }: { status: string }) {
                             Não foi possível extrair o conteúdo deste edital. O PDF pode estar escaneado, protegido, muito grande ou não conter texto legível.
                         </p>
                     </div>
+                    {onRetry && (
+                        <button
+                            id="btn-retry-reprocess"
+                            onClick={onRetry}
+                            disabled={retrying}
+                            className={`
+                                flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150
+                                ${retrying
+                                    ? "bg-card border border-card-border text-muted cursor-not-allowed opacity-60"
+                                    : "bg-primary hover:bg-primary-hover text-white shadow-sm shadow-primary/25 hover:shadow-md hover:shadow-primary/40 cursor-pointer active:scale-[0.98]"
+                                }
+                            `}
+                        >
+                            {retrying ? (
+                                <>
+                                    <svg className="animate-spin" width={15} height={15} fill="none" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth={2} strokeDasharray="31.4" strokeDashoffset="10" />
+                                    </svg>
+                                    Reiniciando…
+                                </>
+                            ) : (
+                                <>
+                                    <svg width={15} height={15} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                            d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    Tentar novamente
+                                </>
+                            )}
+                        </button>
+                    )}
                 </>
             ) : (
                 <>
@@ -450,6 +505,7 @@ export default function EditalTopicsPage() {
     const [topics, setTopics] = useState<Topic[]>([]);
     const [loading, setLoading] = useState(true);
     const [roleConfirming, setRoleConfirming] = useState(false);
+    const [retrying, setRetrying] = useState(false);
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // ── Load edict info from API ─────────────────────────────────────────────
@@ -501,9 +557,15 @@ export default function EditalTopicsPage() {
 
             setEdictInfo(edict);
 
+            // Persist edict display name for sidebar
+            const displayName = edict.title ?? edict.pdf_filename ?? `Edital #${edictId}`;
+            localStorage.setItem(`edict_name_${edictId}`, displayName);
+            window.dispatchEvent(new Event("edict_name_updated"));
+
             if (edict.status === "completed") {
                 const rawTopics = await fetchTopics();
                 localStorage.setItem(`edict_topics_total_${edictId}`, String(rawTopics.length));
+                saveSubtopicMap(edictId, rawTopics);
                 setTopics(rawTopics.map((t) => ({
                     ...t,
                     completed: completedIds.includes(t.id),
@@ -539,6 +601,7 @@ export default function EditalTopicsPage() {
                     const completedIds: number[] = saved ? JSON.parse(saved) : [];
                     const rawTopics = await fetchTopics();
                     localStorage.setItem(`edict_topics_total_${edictId}`, String(rawTopics.length));
+                    saveSubtopicMap(edictId, rawTopics);
                     setTopics(rawTopics.map((t) => ({
                         ...t,
                         completed: completedIds.includes(t.id),
@@ -584,6 +647,30 @@ export default function EditalTopicsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [edictId]);
 
+    // ── Reprocess (retry) ─────────────────────────────────────────────────────
+    const handleRetry = useCallback(async () => {
+        setRetrying(true);
+        try {
+            const res = await fetch(`${API_BASE}/api/v1/edicts/${edictId}/reprocess`, {
+                method: "POST",
+                headers: getAuthHeader(),
+            });
+            if (!res.ok) {
+                const data = await res.json();
+                toast.error(data.error ?? "Erro ao reiniciar o processamento.");
+                return;
+            }
+            // Update status locally so polling kicks in again
+            setEdictInfo((prev) => prev ? { ...prev, status: "not_started" } : prev);
+            toast.success("Reprocessamento iniciado!");
+        } catch {
+            toast.error("Não foi possível reiniciar o processamento. Tente novamente.");
+        } finally {
+            setRetrying(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [edictId]);
+
     // ── Toggle completion ─────────────────────────────────────────────────────
     const handleToggle = useCallback(
         (topicId: number) => {
@@ -602,7 +689,15 @@ export default function EditalTopicsPage() {
     // ── Derived stats ─────────────────────────────────────────────────────────
     const completedCount = topics.filter((t) => t.completed).length;
     const totalCount = topics.length;
-    const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+    // Subtopic-based progress (used for progress ring)
+    const subtopicTotals = topics.reduce((acc, t) => {
+        const sp = getSubtopicProgress(edictId, t.id, t.subtopics.length);
+        return { completed: acc.completed + sp.completed, total: acc.total + sp.total };
+    }, { completed: 0, total: 0 });
+    const progressPct = subtopicTotals.total > 0
+        ? Math.round((subtopicTotals.completed / subtopicTotals.total) * 100)
+        : totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
     const edictName = edictInfo?.title ?? edictInfo?.pdf_filename ?? `Edital #${edictId}`;
     const isProcessing = edictInfo?.status === "in_progress" || edictInfo?.status === "not_started";
     const isFailed = edictInfo?.status === "failed";
@@ -667,7 +762,10 @@ export default function EditalTopicsPage() {
                                 </h1>
                                 {!isProcessing && !isFailed && !isAwaitingRole && (
                                     <p className="text-muted text-sm">
-                                        {completedCount} de {totalCount} tópicos concluídos
+                                        {subtopicTotals.total > 0
+                                            ? `${subtopicTotals.completed} de ${subtopicTotals.total} subtópicos concluídos`
+                                            : `${completedCount} de ${totalCount} tópicos concluídos`
+                                        }
                                     </p>
                                 )}
                                 {isAwaitingRole && (
@@ -693,12 +791,12 @@ export default function EditalTopicsPage() {
                                     Progresso
                                 </p>
                                 <p className="text-2xl font-extrabold text-foreground leading-none">
-                                    {completedCount}
+                                    {subtopicTotals.total > 0 ? subtopicTotals.completed : completedCount}
                                     <span className="text-base font-medium text-muted">
-                                        /{totalCount}
+                                        /{subtopicTotals.total > 0 ? subtopicTotals.total : totalCount}
                                     </span>
                                 </p>
-                                <p className="text-xs text-muted mt-1">tópicos</p>
+                                <p className="text-xs text-muted mt-1">{subtopicTotals.total > 0 ? "subtópicos" : "tópicos"}</p>
                             </div>
                         </div>
                     )}
@@ -739,7 +837,7 @@ export default function EditalTopicsPage() {
                         </div>
                     </div>
                 ) : (isProcessing || isFailed) ? (
-                    <ProcessingState status={edictInfo?.status ?? "in_progress"} />
+                    <ProcessingState status={edictInfo?.status ?? "in_progress"} onRetry={isFailed ? handleRetry : undefined} retrying={retrying} />
                 ) : topics.length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-4 py-16 text-center max-w-md mx-auto">
                         <div className="w-14 h-14 rounded-2xl bg-card border border-card-border flex items-center justify-center text-muted">
@@ -758,7 +856,6 @@ export default function EditalTopicsPage() {
                                 topic={topic}
                                 index={i}
                                 edictId={edictId}
-                                onToggle={handleToggle}
                             />
                         ))}
                     </div>

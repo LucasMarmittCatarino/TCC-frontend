@@ -7,12 +7,36 @@ import { useToast } from "@/hooks/useToast";
 
 // ─── Topic progress helpers ────────────────────────────────────────────────────
 
+/**
+ * Computes edict progress as (completed subtopics) / (total subtopics) across
+ * all topics. Uses localStorage keys saved by the edital page:
+ *   - `edict_subtopic_map_{edictId}` → Record<topicId, subtopicId[]>
+ *   - `subtopics_{edictId}_{topicId}` → Record<subtopicId, status>
+ * Falls back to topic-level completion if subtopic data isn't available.
+ */
 function getEdictProgress(edictId: number): number {
     if (typeof window === "undefined") return 0;
-    const saved = localStorage.getItem(`edict_topics_${edictId}`);
-    const totalStr = localStorage.getItem(`edict_topics_total_${edictId}`);
-    if (!saved || !totalStr) return 0;
     try {
+        const mapRaw = localStorage.getItem(`edict_subtopic_map_${edictId}`);
+        if (mapRaw) {
+            const map: Record<string, number[]> = JSON.parse(mapRaw);
+            let total = 0;
+            let completed = 0;
+            for (const [topicId, subtopicIds] of Object.entries(map)) {
+                total += subtopicIds.length;
+                const statusRaw = localStorage.getItem(`subtopics_${edictId}_${topicId}`);
+                if (statusRaw) {
+                    const statuses: Record<string, string> = JSON.parse(statusRaw);
+                    completed += subtopicIds.filter((id) => statuses[String(id)] === "completed").length;
+                }
+            }
+            if (total === 0) return 0;
+            return Math.round((completed / total) * 100);
+        }
+        // Fallback: topic-level completion
+        const saved = localStorage.getItem(`edict_topics_${edictId}`);
+        const totalStr = localStorage.getItem(`edict_topics_total_${edictId}`);
+        if (!saved || !totalStr) return 0;
         const completedIds: number[] = JSON.parse(saved);
         const total = parseInt(totalStr, 10);
         if (total === 0) return 0;
@@ -115,7 +139,7 @@ const STATUS_COLOR: Record<Edict["status"], string> = {
 
 function progressColor(pct: number): string {
     if (pct === 100) return "#22c55e";
-    if (pct > 0) return "var(--primary)";
+    if (pct > 0) return "linear-gradient(90deg, #f59e0b, #fbbf24)";
     return "var(--muted)";
 }
 
@@ -350,13 +374,24 @@ export default function HomePage() {
                     {!loading && edicts.map((edict) => {
                         const progress = edictProgress[edict.id] ?? 0;
                         const color = progressColor(progress);
-                        const label = STATUS_LABEL[edict.status];
                         const isDeleting = deletingId === edict.id;
+
+                        const cardStyle =
+                            progress === 100
+                                ? "bg-green-500/5 border-green-500/20 hover:border-green-500/40"
+                                : progress > 0
+                                ? "bg-amber-500/5 border-amber-500/25 hover:border-amber-500/40"
+                                : "bg-card border-card-border hover:border-primary/40";
+
+                        const titleStyle =
+                            progress === 100 ? "text-green-400"
+                            : progress > 0 ? "text-amber-300"
+                            : "text-foreground group-hover:text-primary";
 
                         return (
                             <div
                                 key={edict.id}
-                                className="bg-card border border-card-border p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center gap-6 hover:border-primary/40 transition-colors group cursor-pointer active:scale-[0.99]"
+                                className={`${cardStyle} p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center gap-6 transition-colors group cursor-pointer active:scale-[0.99]`}
                                 onClick={() => router.push(`/home/edital/${edict.id}`)}
                                 role="button"
                                 tabIndex={0}
@@ -365,20 +400,9 @@ export default function HomePage() {
                                 {/* Textos Esquerda */}
                                 <div className="flex-1 w-full space-y-3">
                                     <div className="flex items-center gap-3">
-                                        <h4 className="text-base font-bold text-foreground group-hover:text-primary transition-colors">
+                                        <h4 className={`text-base font-bold transition-colors ${titleStyle}`}>
                                             {edict.title ?? edict.pdf_filename ?? `Edital #${edict.id}`}
                                         </h4>
-                                        {/* Badge de status */}
-                                        <span
-                                            className="text-xs font-medium px-2.5 py-0.5 rounded-full border"
-                                            style={{
-                                                color,
-                                                background: `${color}18`,
-                                                borderColor: `${color}40`,
-                                            }}
-                                        >
-                                            {label}
-                                        </span>
                                     </div>
 
                                     <div className="flex flex-wrap gap-3 text-sm text-muted">
@@ -386,6 +410,12 @@ export default function HomePage() {
                                             <IconCalendar size={13} />
                                             Enviado em {formatDate(edict.created_at)}
                                         </span>
+                                        {edict.pdf_filename && (
+                                            <span className="flex items-center gap-1.5 bg-background px-3 py-1 rounded-full border border-card-border max-w-[180px] truncate">
+                                                <IconFilePdf size={13} />
+                                                <span className="truncate">{edict.pdf_filename}</span>
+                                            </span>
+                                        )}
                                         {edict.pdf_size && (
                                             <span className="flex items-center gap-1.5 bg-background px-3 py-1 rounded-full border border-card-border">
                                                 <IconFilePdf size={13} />

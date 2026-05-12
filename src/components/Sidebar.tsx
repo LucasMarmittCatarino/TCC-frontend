@@ -83,23 +83,47 @@ export default function Sidebar() {
 
     const width = collapsed ? "72px" : "240px";
 
-    // ── Real user from localStorage ──────────────────────────────────────────
+    // ── Real user from localStorage ─────────────────────────────────────────────────────
     const [user, setUser] = useState({ name: "", email: "", id: "" });
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [lastTrailPath, setLastTrailPath] = useState<string | null>(null);
+    const [trailName, setTrailName] = useState<string | null>(null);
     const userIdRef = useRef<string>("");
 
-    // Track trail path: every time we're inside /home/edital/... persist the full path
+    // Extract edict root path (/home/edital/:id) from a full pathname
+    function edictRootPath(p: string): string {
+        const m = p.match(/^\/home\/edital\/[^\/]+/);
+        return m ? m[0] : p;
+    }
+
+    // Helper to read trail name from localStorage for a given trail path
+    function readTrailName(trailPath: string | null): string | null {
+        if (!trailPath) return null;
+        const m = trailPath.match(/^\/home\/edital\/(\d+)/);
+        if (!m) return null;
+        const edictId = m[1];
+        try {
+            const info = localStorage.getItem(`edict_name_${edictId}`);
+            return info || null;
+        } catch { return null; }
+    }
+
+    // Track trail path: every time we're inside /home/edital/... persist only the root edict path
     const prevPathname = useRef<string | null>(null);
     useEffect(() => {
         const key = trailPathKey(userIdRef.current);
         if (pathname.startsWith("/home/edital")) {
-            localStorage.setItem(key, pathname);
-            setLastTrailPath(pathname);
+            const rootPath = edictRootPath(pathname);
+            localStorage.setItem(key, rootPath);
+            setLastTrailPath(rootPath);
+            setTrailName(readTrailName(rootPath));
         } else if (prevPathname.current?.startsWith("/home/edital")) {
             // leaving the trail — keep the last trail path as-is so we can resume
             const saved = localStorage.getItem(key);
-            if (saved) setLastTrailPath(saved);
+            if (saved) {
+                setLastTrailPath(saved);
+                setTrailName(readTrailName(saved));
+            }
         }
         prevPathname.current = pathname;
     }, [pathname]);
@@ -117,7 +141,10 @@ export default function Sidebar() {
 
                     // Restore per-user trail path
                     const saved = localStorage.getItem(trailPathKey(uid));
-                    if (saved) setLastTrailPath(saved);
+                    if (saved) {
+                        setLastTrailPath(saved);
+                        setTrailName(readTrailName(saved));
+                    }
                 } else {
                     setAvatarUrl(null);
                 }
@@ -128,7 +155,17 @@ export default function Sidebar() {
 
         // Listen for avatar changes dispatched by the profile page
         window.addEventListener("avatar_updated", loadUser);
-        return () => window.removeEventListener("avatar_updated", loadUser);
+        // Listen for edict name updates (dispatched by the edital page)
+        const onTrailNameUpdate = () => {
+            const key = trailPathKey(userIdRef.current);
+            const saved = localStorage.getItem(key);
+            if (saved) setTrailName(readTrailName(saved));
+        };
+        window.addEventListener("edict_name_updated", onTrailNameUpdate);
+        return () => {
+            window.removeEventListener("avatar_updated", loadUser);
+            window.removeEventListener("edict_name_updated", onTrailNameUpdate);
+        };
     }, []);
 
     const handleLogout = () => {
@@ -338,7 +375,24 @@ export default function Sidebar() {
                             <span style={{ flexShrink: 0 }}>
                                 <Icon size={20} />
                             </span>
-                            {!collapsed && <span>{item.label}</span>}
+                            {!collapsed && (
+                                <span style={{ display: "flex", flexDirection: "column", gap: "0px", overflow: "hidden", flex: 1 }}>
+                                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.label}</span>
+                                    {isTrail && trailName && (
+                                        <span style={{
+                                            fontSize: "11px",
+                                            color: isActive ? "rgba(255,255,255,0.7)" : "var(--muted)",
+                                            whiteSpace: "nowrap",
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            lineHeight: 1.2,
+                                            marginTop: "1px",
+                                        }}>
+                                            {trailName}
+                                        </span>
+                                    )}
+                                </span>
+                            )}
                         </Link>
                     );
                 })}

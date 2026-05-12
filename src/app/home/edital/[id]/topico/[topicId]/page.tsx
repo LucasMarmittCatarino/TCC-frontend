@@ -88,7 +88,7 @@ function IconCheckCircle({ filled = false, size = 22 }: { filled?: boolean; size
     if (filled) {
         return (
             <svg width={size} height={size} fill="none" viewBox="0 0 24 24">
-                <circle cx="12" cy="12" r="12" fill="var(--primary)" />
+                <circle cx="12" cy="12" r="12" fill="#22c55e" />
                 <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -172,6 +172,7 @@ function SubtopicCard({
     onNavigate: (id: number) => void;
 }) {
     const cfg = STATUS_CONFIG[subtopic.status];
+    const isLocked = subtopic.status === "not_started";
 
     return (
         <div
@@ -183,22 +184,32 @@ function SubtopicCard({
             style={{ animationDelay: `${index * 50}ms` }}
             onClick={() => onNavigate(subtopic.id)}
         >
-            {/* Status dot */}
-            <div className={`absolute top-3.5 right-14 w-2 h-2 rounded-full ${cfg.dot} opacity-80`} />
-
             {/* Check button */}
             <button
                 id={`subtopic-check-${subtopic.id}`}
-                onClick={(e) => { e.stopPropagation(); onCycle(subtopic.id); }}
-                title="Alterar status"
+                onClick={(e) => { e.stopPropagation(); if (!isLocked) onCycle(subtopic.id); }}
+                title={
+                    isLocked
+                        ? "Inicie este subtópico para marcar progresso"
+                        : subtopic.status === "completed"
+                        ? "Marcar como em andamento"
+                        : "Marcar como concluído"
+                }
+                disabled={isLocked}
                 className={`
-                    flex-shrink-0 transition-all duration-200 cursor-pointer rounded-full
+                    flex-shrink-0 transition-all duration-200 rounded-full
                     focus:outline-none focus:ring-2 focus:ring-primary/40
-                    ${cfg.checkColor}
-                    ${subtopic.status !== "not_started" ? "scale-110" : "hover:scale-110 hover:text-primary"}
+                    ${isLocked
+                        ? "text-[#334155] cursor-not-allowed opacity-50"
+                        : `cursor-pointer ${cfg.checkColor} ${subtopic.status !== "not_started" ? "scale-110" : "hover:scale-110 hover:text-primary"}`
+                    }
                 `}
             >
-                <IconCheckCircle filled={subtopic.status === "completed"} size={24} />
+                {isLocked ? (
+                    <IconLock size={20} />
+                ) : (
+                    <IconCheckCircle filled={subtopic.status === "completed"} size={24} />
+                )}
             </button>
 
             {/* Title */}
@@ -217,7 +228,7 @@ function SubtopicCard({
                     {subtopic.title}
                 </h3>
                 <p className="text-[11px] text-muted/60 mt-0.5 group-hover:text-muted transition-colors">
-                    Clique para estudar com IA
+                    {isLocked ? "Inicie o chat para desbloquear conclusão" : "Clique para estudar com IA"}
                 </p>
             </div>
 
@@ -314,17 +325,19 @@ export default function SubtopicsPage() {
     }, [fetchEdictInfo, fetchTopic]);
 
     // ── Cycle subtopic status ─────────────────────────────────────────────────
+    // Only in_progress or completed subtopics can be toggled.
+    // not_started subtopics are unlocked automatically when the user first chats.
     const handleCycle = useCallback(
         (subtopicId: number) => {
             setSubtopics((prev) => {
+                const target = prev.find((s) => s.id === subtopicId);
+                // Guard: do nothing for not_started (should not happen since button is disabled)
+                if (!target || target.status === "not_started") return prev;
+
                 const updated = prev.map((s) => {
                     if (s.id !== subtopicId) return s;
                     const next: SubtopicItem["status"] =
-                        s.status === "not_started"
-                            ? "in_progress"
-                            : s.status === "in_progress"
-                            ? "completed"
-                            : "not_started";
+                        s.status === "completed" ? "in_progress" : "completed";
                     return { ...s, status: next };
                 });
 
@@ -337,6 +350,7 @@ export default function SubtopicsPage() {
         },
         [edictId, topicId]
     );
+
 
     // ── Derived ───────────────────────────────────────────────────────────────
     const allCompleted =
@@ -408,6 +422,29 @@ export default function SubtopicsPage() {
                     <p className="text-muted text-sm">
                         {completedCount} de {subtopics.length} subtópicos concluídos
                     </p>
+
+                    {/* Progress bar */}
+                    {subtopics.length > 0 && (
+                        <div className="pt-2 max-w-sm">
+                            <div className="flex justify-between text-[11px] text-muted/70 mb-1">
+                                <span>Progresso</span>
+                                <span>{Math.round((completedCount / subtopics.length) * 100)}%</span>
+                            </div>
+                            <div className="h-2 rounded-full bg-[#0f172a] border border-[#334155] overflow-hidden">
+                                <div
+                                    className="h-full rounded-full transition-all duration-700 ease-out"
+                                    style={{
+                                        width: `${Math.round((completedCount / subtopics.length) * 100)}%`,
+                                        background: allCompleted
+                                            ? "#22c55e"
+                                            : completedCount > 0
+                                            ? "linear-gradient(90deg, #f59e0b, #fbbf24)"
+                                            : "transparent",
+                                    }}
+                                />
+                            </div>
+                        </div>
+                    )}
                 </header>
 
                 {/* ── Back button (mobile) ─────────────────────────── */}
@@ -435,7 +472,7 @@ export default function SubtopicsPage() {
                             </div>
                         ))}
                         <span className="text-xs text-muted/50 ml-auto italic">
-                            Clique no círculo para avançar o status
+                            Inicie o chat para desbloquear o ✓
                         </span>
                     </div>
 
@@ -543,7 +580,7 @@ export default function SubtopicsPage() {
                                         style={{
                                             width: `${Math.round((completedCount / subtopics.length) * 100)}%`,
                                             background: allCompleted
-                                                ? "var(--primary)"
+                                                ? "#22c55e"
                                                 : "linear-gradient(90deg, #f59e0b, #fbbf24)",
                                         }}
                                     />
