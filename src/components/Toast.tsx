@@ -75,6 +75,7 @@ function ToastIcon({ type }: { type: ToastType }) {
 function SingleToast({ toast, onRemove }: { toast: ToastItem; onRemove: (id: string) => void }) {
     const c = COLORS[toast.type];
     const duration = toast.duration ?? 4000;
+    const persistent = duration === 0;
     const [visible, setVisible] = useState(false);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -84,12 +85,13 @@ function SingleToast({ toast, onRemove }: { toast: ToastItem; onRemove: (id: str
         return () => clearTimeout(t);
     }, []);
 
-    // Auto-dismiss
+    // Auto-dismiss (skipped when persistent)
     useEffect(() => {
+        if (persistent) return;
         timerRef.current = setTimeout(() => handleClose(), duration);
         return () => { if (timerRef.current) clearTimeout(timerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [duration]);
+    }, [duration, persistent]);
 
     const handleClose = () => {
         setVisible(false);
@@ -152,19 +154,21 @@ function SingleToast({ toast, onRemove }: { toast: ToastItem; onRemove: (id: str
                 </svg>
             </button>
 
-            {/* Progress bar */}
-            <span
-                style={{
-                    position: "absolute",
-                    bottom: 0,
-                    left: 0,
-                    height: "2px",
-                    background: c.bar,
-                    width: visible ? "0%" : "100%",
-                    transition: `width ${duration}ms linear`,
-                    transitionDelay: visible ? "0ms" : "10ms",
-                }}
-            />
+            {/* Progress bar — hidden for persistent toasts */}
+            {!persistent && (
+                <span
+                    style={{
+                        position: "absolute",
+                        bottom: 0,
+                        left: 0,
+                        height: "2px",
+                        background: c.bar,
+                        width: visible ? "0%" : "100%",
+                        transition: `width ${duration}ms linear`,
+                        transitionDelay: visible ? "0ms" : "10ms",
+                    }}
+                />
+            )}
         </div>
     );
 }

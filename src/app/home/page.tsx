@@ -51,10 +51,12 @@ function getEdictProgress(edictId: number): number {
 interface Edict {
     id: number;
     title: string | null;
-    status: "not_started" | "in_progress" | "completed" | "failed";
+    status: "not_started" | "in_progress" | "awaiting_role" | "completed" | "failed";
     created_at: string;
     pdf_filename: string | null;
     pdf_size: number | null;
+    selected_cargo_code: string | null;
+    selected_cargo_name: string | null;
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -121,20 +123,128 @@ function IconSpinner({ size = 20 }: { size?: number }) {
     );
 }
 
+function IconBriefcase({ size = 14 }: { size?: number }) {
+    return (
+        <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
+        </svg>
+    );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STATUS_LABEL: Record<Edict["status"], string> = {
-    not_started: "Não iniciado",
-    in_progress: "Em progresso",
-    completed: "Concluído",
-    failed: "Falha no processamento",
-};
+/** Derives a rich visual state from edict status + cargo selection + local progress. */
+type CardState =
+    | "extracting"        // not_started or in_progress, no cargo yet
+    | "awaiting_role"     // awaiting_role
+    | "generating"        // in_progress with cargo already set
+    | "ready"             // completed, progress === 0 (never opened)
+    | "in_progress"       // completed, 0 < progress < 100
+    | "done"              // completed, progress === 100
+    | "failed";
 
-const STATUS_COLOR: Record<Edict["status"], string> = {
-    not_started: "var(--muted)",
-    in_progress: "var(--primary)",
-    completed: "#22c55e",
-    failed: "#ef4444",
+function getCardState(edict: Edict, progress: number): CardState {
+    if (edict.status === "failed") return "failed";
+    if (edict.status === "awaiting_role") return "awaiting_role";
+    if (edict.status === "not_started") return "extracting";
+    if (edict.status === "in_progress") {
+        return edict.selected_cargo_code ? "generating" : "extracting";
+    }
+    // completed
+    if (progress === 100) return "done";
+    if (progress > 0) return "in_progress";
+    return "ready";
+}
+
+const STATE_CONFIG: Record<CardState, {
+    label: string;
+    labelColor: string;
+    dotColor: string;
+    cardBg: string;
+    cardBorder: string;
+    cardHover: string;
+    titleColor: string;
+    barColor: string | null;
+    spinner: boolean;
+}> = {
+    extracting: {
+        label: "Extraindo cargos…",
+        labelColor: "text-primary",
+        dotColor: "bg-primary",
+        cardBg: "bg-primary/5",
+        cardBorder: "border-primary/20",
+        cardHover: "hover:border-primary/40",
+        titleColor: "text-foreground",
+        barColor: null,
+        spinner: true,
+    },
+    awaiting_role: {
+        label: "Aguardando seleção de cargo",
+        labelColor: "text-amber-400",
+        dotColor: "bg-amber-400",
+        cardBg: "bg-amber-500/5",
+        cardBorder: "border-amber-500/25",
+        cardHover: "hover:border-amber-500/50",
+        titleColor: "text-amber-300",
+        barColor: null,
+        spinner: false,
+    },
+    generating: {
+        label: "Gerando trilha…",
+        labelColor: "text-primary",
+        dotColor: "bg-primary",
+        cardBg: "bg-primary/5",
+        cardBorder: "border-primary/20",
+        cardHover: "hover:border-primary/40",
+        titleColor: "text-foreground",
+        barColor: null,
+        spinner: true,
+    },
+    ready: {
+        label: "Trilha pronta!",
+        labelColor: "text-teal-400",
+        dotColor: "bg-teal-400",
+        cardBg: "bg-teal-500/5",
+        cardBorder: "border-teal-500/20",
+        cardHover: "hover:border-teal-500/40",
+        titleColor: "text-foreground group-hover:text-teal-300",
+        barColor: "var(--muted)",
+        spinner: false,
+    },
+    in_progress: {
+        label: "Em andamento",
+        labelColor: "text-amber-400",
+        dotColor: "bg-amber-400",
+        cardBg: "bg-amber-500/5",
+        cardBorder: "border-amber-500/25",
+        cardHover: "hover:border-amber-500/40",
+        titleColor: "text-amber-300",
+        barColor: "linear-gradient(90deg, #f59e0b, #fbbf24)",
+        spinner: false,
+    },
+    done: {
+        label: "Concluído",
+        labelColor: "text-green-400",
+        dotColor: "bg-green-400",
+        cardBg: "bg-green-500/5",
+        cardBorder: "border-green-500/20",
+        cardHover: "hover:border-green-500/40",
+        titleColor: "text-green-400",
+        barColor: "#22c55e",
+        spinner: false,
+    },
+    failed: {
+        label: "Falha no processamento",
+        labelColor: "text-red-400",
+        dotColor: "bg-red-400",
+        cardBg: "bg-red-500/5",
+        cardBorder: "border-red-500/20",
+        cardHover: "hover:border-red-500/30",
+        titleColor: "text-foreground",
+        barColor: null,
+        spinner: false,
+    },
 };
 
 function progressColor(pct: number): string {
@@ -373,73 +483,84 @@ export default function HomePage() {
                     {/* Edict cards */}
                     {!loading && edicts.map((edict) => {
                         const progress = edictProgress[edict.id] ?? 0;
-                        const color = progressColor(progress);
                         const isDeleting = deletingId === edict.id;
-
-                        const cardStyle =
-                            progress === 100
-                                ? "bg-green-500/5 border-green-500/20 hover:border-green-500/40"
-                                : progress > 0
-                                ? "bg-amber-500/5 border-amber-500/25 hover:border-amber-500/40"
-                                : "bg-card border-card-border hover:border-primary/40";
-
-                        const titleStyle =
-                            progress === 100 ? "text-green-400"
-                            : progress > 0 ? "text-amber-300"
-                            : "text-foreground group-hover:text-primary";
+                        const cardState = getCardState(edict, progress);
+                        const cfg = STATE_CONFIG[cardState];
+                        const showProgress = edict.status === "completed";
 
                         return (
                             <div
                                 key={edict.id}
-                                className={`${cardStyle} p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center gap-6 transition-colors group cursor-pointer active:scale-[0.99]`}
+                                className={`border ${cfg.cardBg} ${cfg.cardBorder} ${cfg.cardHover} p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center gap-6 transition-all group cursor-pointer active:scale-[0.99]`}
                                 onClick={() => router.push(`/home/edital/${edict.id}`)}
                                 role="button"
                                 tabIndex={0}
                                 onKeyDown={(e) => e.key === "Enter" && router.push(`/home/edital/${edict.id}`)}
                             >
                                 {/* Textos Esquerda */}
-                                <div className="flex-1 w-full space-y-3">
-                                    <div className="flex items-center gap-3">
-                                        <h4 className={`text-base font-bold transition-colors ${titleStyle}`}>
+                                <div className="flex-1 w-full space-y-3 min-w-0">
+                                    {/* Título + badge de status */}
+                                    <div className="flex items-start gap-3 flex-wrap">
+                                        <h4 className={`text-base font-bold transition-colors ${cfg.titleColor}`}>
                                             {edict.title ?? edict.pdf_filename ?? `Edital #${edict.id}`}
                                         </h4>
+                                        {/* Status badge */}
+                                        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full border ${cfg.labelColor} bg-transparent border-current/20 whitespace-nowrap`}>
+                                            {cfg.spinner
+                                                ? <IconSpinner size={11} />
+                                                : <span className={`w-1.5 h-1.5 rounded-full ${cfg.dotColor} inline-block`} />
+                                            }
+                                            {cfg.label}
+                                        </span>
                                     </div>
 
-                                    <div className="flex flex-wrap gap-3 text-sm text-muted">
+                                    {/* Metadata row */}
+                                    <div className="flex flex-wrap gap-2 text-sm text-muted">
                                         <span className="flex items-center gap-1.5 bg-background px-3 py-1 rounded-full border border-card-border">
                                             <IconCalendar size={13} />
-                                            Enviado em {formatDate(edict.created_at)}
+                                            {formatDate(edict.created_at)}
                                         </span>
                                         {edict.pdf_filename && (
-                                            <span className="flex items-center gap-1.5 bg-background px-3 py-1 rounded-full border border-card-border max-w-[180px] truncate">
+                                            <span className="flex items-center gap-1.5 bg-background px-3 py-1 rounded-full border border-card-border max-w-[200px]">
                                                 <IconFilePdf size={13} />
                                                 <span className="truncate">{edict.pdf_filename}</span>
                                             </span>
                                         )}
                                         {edict.pdf_size && (
                                             <span className="flex items-center gap-1.5 bg-background px-3 py-1 rounded-full border border-card-border">
-                                                <IconFilePdf size={13} />
                                                 {formatSize(edict.pdf_size)}
+                                            </span>
+                                        )}
+                                        {/* Cargo selecionado */}
+                                        {edict.selected_cargo_name && (
+                                            <span className="flex items-center gap-1.5 bg-primary/10 text-primary px-3 py-1 rounded-full border border-primary/20 font-medium max-w-[240px]">
+                                                <IconBriefcase size={12} />
+                                                <span className="truncate">{edict.selected_cargo_name}</span>
                                             </span>
                                         )}
                                     </div>
                                 </div>
 
-                                {/* Barra de progresso */}
-                                <div className="w-full md:w-56 space-y-2 shrink-0">
-                                    <div className="flex justify-between items-end">
-                                        <span className="text-xs font-semibold text-muted uppercase tracking-wider">Progresso</span>
-                                        <span className="text-sm font-bold text-foreground">{progress}%</span>
-                                    </div>
-                                    <div className="h-2 w-full bg-background rounded-full overflow-hidden border border-card-border">
-                                        <div
-                                            className="h-full transition-all duration-700 ease-out relative"
-                                            style={{ width: `${progress}%`, background: color }}
-                                        >
-                                            <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/20" />
+                                {/* Barra de progresso — só quando completed */}
+                                {showProgress ? (
+                                    <div className="w-full md:w-52 space-y-1.5 shrink-0">
+                                        <div className="flex justify-between items-center">
+                                            <span className="text-xs font-semibold text-muted uppercase tracking-wider">Progresso</span>
+                                            <span className={`text-sm font-bold ${cfg.labelColor}`}>{progress}%</span>
+                                        </div>
+                                        <div className="h-2 w-full bg-background rounded-full overflow-hidden border border-card-border">
+                                            <div
+                                                className="h-full transition-all duration-700 ease-out relative"
+                                                style={{ width: `${progress}%`, background: cfg.barColor ?? "var(--muted)" }}
+                                            >
+                                                <div className="absolute inset-0 bg-gradient-to-r from-transparent to-white/20" />
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                ) : (
+                                    /* Placeholder para manter layout alinhado em mobile */
+                                    <div className="hidden md:block w-52 shrink-0" />
+                                )}
 
                                 {/* Botão excluir */}
                                 <button

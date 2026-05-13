@@ -34,6 +34,8 @@ interface EdictInfo {
     available_roles: CargoOption[];
     selected_roles: string[];
     retry_after: number | null;
+    selected_cargo_code: string | null;
+    selected_cargo_name: string | null;
 }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
@@ -410,7 +412,12 @@ function ProgressRing({ percent }: { percent: number }) {
 
 // ─── Processing State ─────────────────────────────────────────────────────────
 
-function ProcessingState({ status, onRetry, retrying }: { status: string; onRetry?: () => void; retrying?: boolean }) {
+function ProcessingState({ status, phase, onRetry, retrying }: {
+    status: string;
+    phase: 1 | 2;
+    onRetry?: () => void;
+    retrying?: boolean;
+}) {
     const isFailed = status === "failed";
 
     return (
@@ -471,9 +478,14 @@ function ProcessingState({ status, onRetry, retrying }: { status: string; onRetr
                         </div>
                     </div>
                     <div>
-                        <h2 className="text-lg font-bold text-foreground mb-2">Extraindo cargos do edital…</h2>
+                        <h2 className="text-lg font-bold text-foreground mb-2">
+                            {phase === 2 ? "Gerando sua trilha de estudos…" : "Extraindo cargos do edital…"}
+                        </h2>
                         <p className="text-sm text-muted leading-relaxed">
-                            O Gemini está varrendo todo o PDF para identificar os cargos e seus conteúdos programáticos. Isso pode levar alguns minutos.
+                            {phase === 2
+                                ? "O Gemini está montando um plano de estudo personalizado para o seu cargo. Isso pode levar alguns minutos."
+                                : "O Gemini está varrendo todo o PDF para identificar os cargos e seus conteúdos programáticos. Isso pode levar alguns minutos."
+                            }
                         </p>
                     </div>
                     <div className="flex gap-2">
@@ -507,6 +519,8 @@ export default function EditalTopicsPage() {
     const [roleConfirming, setRoleConfirming] = useState(false);
     const [retrying, setRetrying] = useState(false);
     const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    // Tracks whether the user has already selected a role (= we are in Phase 2)
+    const hasSelectedRoleRef = useRef<boolean>(false);
 
     // ── Load edict info from API ─────────────────────────────────────────────
     const fetchEdict = useCallback(async () => {
@@ -606,9 +620,12 @@ export default function EditalTopicsPage() {
                         ...t,
                         completed: completedIds.includes(t.id),
                     })));
-                } else if (updated.status === "failed" || updated.status === "awaiting_role") {
-                    // Para de fazer polling: awaiting_role = modal de cargo vai aparecer
-                    // failed = estado terminal
+                    toast.success("Trilha gerada com sucesso! Seus tópicos estão prontos.", 0);
+                } else if (updated.status === "awaiting_role") {
+                    // Fase 1 concluída — modal de cargo vai aparecer
+                    clearInterval(pollingRef.current!);
+                    toast.info("Cargos identificados! Selecione seu cargo para gerar a trilha.", 0);
+                } else if (updated.status === "failed") {
                     clearInterval(pollingRef.current!);
                 }
             }, 5000); // poll a cada 5s
@@ -637,8 +654,8 @@ export default function EditalTopicsPage() {
             }
 
             // Backend confirmou: muda para in_progress localmente e o polling vai capturar o completed
+            hasSelectedRoleRef.current = true;
             setEdictInfo((prev) => prev ? { ...prev, status: "in_progress" } : prev);
-            toast.success("Trilha sendo gerada para o cargo selecionado!");
         } catch {
             toast.error("Não foi possível selecionar o cargo. Tente novamente.");
         } finally {
@@ -702,6 +719,7 @@ export default function EditalTopicsPage() {
     const isProcessing = edictInfo?.status === "in_progress" || edictInfo?.status === "not_started";
     const isFailed = edictInfo?.status === "failed";
     const isAwaitingRole = edictInfo?.status === "awaiting_role";
+    const processingPhase: 1 | 2 = hasSelectedRoleRef.current ? 2 : 1;
 
     // ── Page title ───────────────────────────────────────────────────────────────
     useEffect(() => {
@@ -761,12 +779,20 @@ export default function EditalTopicsPage() {
                                     {edictName}
                                 </h1>
                                 {!isProcessing && !isFailed && !isAwaitingRole && (
-                                    <p className="text-muted text-sm">
-                                        {subtopicTotals.total > 0
-                                            ? `${subtopicTotals.completed} de ${subtopicTotals.total} subtópicos concluídos`
-                                            : `${completedCount} de ${totalCount} tópicos concluídos`
-                                        }
-                                    </p>
+                                    <>
+                                        <p className="text-muted text-sm">
+                                            {subtopicTotals.total > 0
+                                                ? `${subtopicTotals.completed} de ${subtopicTotals.total} subtópicos concluídos`
+                                                : `${completedCount} de ${totalCount} tópicos concluídos`
+                                            }
+                                        </p>
+                                        {edictInfo?.selected_cargo_name && (
+                                            <span className="inline-flex items-center gap-1.5 mt-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary w-fit">
+                                                <IconBriefcase size={11} />
+                                                {edictInfo.selected_cargo_name}
+                                            </span>
+                                        )}
+                                    </>
                                 )}
                                 {isAwaitingRole && (
                                     <p className="text-sm text-primary/80">
@@ -837,7 +863,7 @@ export default function EditalTopicsPage() {
                         </div>
                     </div>
                 ) : (isProcessing || isFailed) ? (
-                    <ProcessingState status={edictInfo?.status ?? "in_progress"} onRetry={isFailed ? handleRetry : undefined} retrying={retrying} />
+                    <ProcessingState status={edictInfo?.status ?? "in_progress"} phase={processingPhase} onRetry={isFailed ? handleRetry : undefined} retrying={retrying} />
                 ) : topics.length === 0 ? (
                     <div className="flex flex-col items-center justify-center gap-4 py-16 text-center max-w-md mx-auto">
                         <div className="w-14 h-14 rounded-2xl bg-card border border-card-border flex items-center justify-center text-muted">
